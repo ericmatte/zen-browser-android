@@ -11,6 +11,7 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.MediaSession
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebResponse
 
@@ -31,6 +32,7 @@ interface TabEvents {
     fun onFullScreen(tabId: String, fullScreen: Boolean) {}
     fun onDownload(tabId: String, response: WebResponse) {}
     fun onSecurity(tabId: String, secure: Boolean) {}
+    fun onMediaPlaying(tabId: String, playing: Boolean) {}
     /** Returns true when the navigation was consumed (e.g. the FxA OAuth redirect). */
     fun interceptNavigation(tabId: String, url: String): Boolean = false
 }
@@ -64,7 +66,8 @@ object Gecko {
      * Gecko prefs with no runtime-settings API. Rotating into landscape is not a
      * user gesture, so fullscreen-on-rotate needs untrusted fullscreen requests;
      * FullScreenGate puts the gesture requirement back in the app (a recent
-     * touch on the page or a rotation), so a page cannot cover the browser alone.
+     * touch on the page, or a rotation while that page plays media), so a page
+     * cannot cover the browser alone.
      */
     private fun writeConfig(context: Context): java.io.File =
         java.io.File(context.filesDir, "geckoview-config.yaml").apply {
@@ -262,6 +265,12 @@ class TabSessions(
             override fun onPageStop(session: GeckoSession, success: Boolean) = events.onPageLoaded(tabId)
             override fun onSecurityChange(session: GeckoSession, info: GeckoSession.ProgressDelegate.SecurityInformation) =
                 events.onSecurity(tabId, info.isSecure)
+        }
+        session.mediaSessionDelegate = object : MediaSession.Delegate {
+            override fun onPlay(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, true)
+            override fun onPause(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, false)
+            override fun onStop(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, false)
+            override fun onDeactivated(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, false)
         }
         session.scrollDelegate = object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) = events.onScroll(tabId, scrollY)

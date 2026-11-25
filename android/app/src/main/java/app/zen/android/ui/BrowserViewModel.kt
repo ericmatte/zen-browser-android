@@ -471,6 +471,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     private fun forget(tabId: String) {
         loadingTabs -= tabId
+        playingTabs -= tabId
         sessions.close(tabId)
         urls.remove(tabId)
         titles.remove(tabId)
@@ -868,8 +869,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         lastRotation = System.currentTimeMillis()
     }
 
+    private val playingTabs = mutableSetOf<String>()
+
+    override fun onMediaPlaying(tabId: String, playing: Boolean) {
+        if (playing) playingTabs += tabId else playingTabs -= tabId
+    }
+
     override fun onFullScreen(tabId: String, fullScreen: Boolean) {
-        if (fullScreen && !FullScreenGate.allowed(System.currentTimeMillis(), lastPageTouch, lastRotation)) {
+        if (fullScreen && !FullScreenGate.allowed(System.currentTimeMillis(), lastPageTouch, lastRotation, tabId in playingTabs)) {
             sessions.peek(tabId)?.exitFullScreen()
             return
         }
