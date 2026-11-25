@@ -1,5 +1,7 @@
 package app.zen.android.ui
 
+import app.zen.android.browser.Release
+import app.zen.android.browser.Updates
 import android.app.Application
 import android.app.DownloadManager
 import android.content.Context
@@ -246,6 +248,40 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun syncNow() = viewModelScope.launch { repository.sync() }
+
+    /** A newer release than this build, once a check found one. Drives the yellow dots. */
+    var update by mutableStateOf<Release?>(cachedUpdate())
+        private set
+    var checkingUpdates by mutableStateOf(false)
+        private set
+
+    private fun cachedUpdate(): Release? {
+        val version = settings.string("updateVersion") ?: return null
+        val page = settings.string("updatePage") ?: return null
+        return Release(version, page).takeIf { Updates.isNewer(version, app.zen.android.BuildConfig.VERSION_NAME) }
+    }
+
+    /** At most twice a day unless [force]d; one anonymous request to GitHub's public API. */
+    fun checkForUpdates(force: Boolean = false) {
+        if (!force && !settings.state.value.checkUpdates) return
+        val last = settings.string("updateChecked")?.toLongOrNull() ?: 0L
+        if (!force && System.currentTimeMillis() - last < Updates.CHECK_EVERY_MILLIS) return
+        if (checkingUpdates) return
+        checkingUpdates = true
+        viewModelScope.launch {
+            val latest = withContext(Dispatchers.IO) { Updates.fetchLatest() }
+            checkingUpdates = false
+            if (latest == null) {
+                if (force) message = "Could not reach GitHub"
+                return@launch
+            }
+            settings.putString("updateChecked", System.currentTimeMillis().toString())
+            settings.putString("updateVersion", latest.version)
+            settings.putString("updatePage", latest.pageUrl)
+            update = latest.takeIf { Updates.isNewer(it.version, app.zen.android.BuildConfig.VERSION_NAME) }
+            if (force && update == null) message = "Zen is up to date"
+        }
+    }
 
     fun space(uuid: String?): Space? = repository.view.value.spaces().firstOrNull { it.uuid == uuid }
 

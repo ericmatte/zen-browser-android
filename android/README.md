@@ -61,6 +61,11 @@ The app reuses desktop code or ports it closely:
 - "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
   claims the page's address.
 - Pages laid out for the phone's width never scroll sideways onto nothing.
+- Updates: new versions are GitHub releases tagged `android-vX.Y.Z`. Settings →
+  Updates adds Zen to [Obtainium](https://github.com/ImranR98/Obtainium) (or
+  copies the repository URL for it). The app also asks GitHub twice a day and
+  puts a yellow dot on the ⋯ button and its Settings entry when a newer
+  version is out (Settings → Updates to turn it off).
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
   also works. Each entry the finger reaches ticks the vibration motor
   (Settings → Haptic feedback, on by default).
@@ -87,4 +92,12 @@ cd android
 
 The APKs are in `app/build/outputs/apk/release/`. Release signing reads
 `keystore.properties` (never committed). Without it, the release falls back
-to the debug key.
+to the debug key. Every release must use the same key, or Android refuses
+to update the installed app.
+
+Publish a release (Obtainium and the in-app check read these):
+
+```sh
+gh release create android-vX.Y.Z ~/Documents/Projects/zen/release/zen-android-X.Y.Z-arm64.apk \
+  --repo ericmatte/zen-browser-desktop --title "Zen Android X.Y.Z" --notes "…"
+```

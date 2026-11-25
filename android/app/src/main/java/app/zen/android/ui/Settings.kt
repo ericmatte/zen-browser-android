@@ -1,5 +1,9 @@
 package app.zen.android.ui
 
+import android.content.ActivityNotFoundException
+import android.net.Uri
+import android.content.Context
+import app.zen.android.browser.Updates
 import android.app.role.RoleManager
 import android.content.Intent
 import android.provider.Settings
@@ -174,6 +178,38 @@ private fun SettingsContent(vm: BrowserViewModel) {
                     ChoiceRow("Notifications", null, SitePermission.entries, prefs.notifications, { it.label }) { v -> set { it.copy(notifications = v) } }
                 }
 
+                Section("Updates") {
+                    val context = LocalContext.current
+                    val update = vm.update
+                    if (update != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            UpdateDot()
+                            Spacer(Modifier.width(10.dp))
+                            SettingRow("Zen ${update.version} is available", "You have ${BuildConfig.VERSION_NAME}")
+                        }
+                        ActionRow(if (obtainiumInstalled(context)) "Update with Obtainium" else "Open the release page") {
+                            if (!openObtainium(context)) {
+                                vm.showSettings = false
+                                vm.newTab(update.pageUrl)
+                            }
+                        }
+                    }
+                    ActionRow(if (vm.checkingUpdates) "Checking…" else "Check for updates now") { vm.checkForUpdates(force = true) }
+                    SwitchRow("Check for updates automatically", "Asks GitHub twice a day and puts a yellow dot on the ⋯ button when a new version is out", prefs.checkUpdates) { v -> set { it.copy(checkUpdates = v) } }
+                    SettingRow("Install updates with Obtainium", "Zen is not on the Play Store. Obtainium watches its GitHub releases and installs each new version, including GeckoView security fixes.")
+                    ActionRow("Add Zen to Obtainium") {
+                        if (!openLink(context, Updates.OBTAINIUM_ADD)) {
+                            vm.message = "Install Obtainium first, then come back here"
+                            vm.showSettings = false
+                            vm.newTab(Updates.OBTAINIUM_DOWNLOAD)
+                        }
+                    }
+                    CopyRow("Repository URL for Obtainium", Updates.REPO_URL) {
+                        copyToClipboard(context, Updates.REPO_URL)
+                        vm.message = "Repository URL copied"
+                    }
+                }
+
                 Section("About") {
                     SettingRow("Zen for Android", "Version ${BuildConfig.VERSION_NAME} · GeckoView ${org.mozilla.geckoview.BuildConfig.MOZILLA_VERSION}")
                     ActionRow("Source code") {
@@ -265,6 +301,33 @@ private fun SettingRow(title: String, subtitle: String?) {
         Text(title, style = MaterialTheme.typography.bodyLarge)
         subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
+}
+
+@Composable
+private fun CopyRow(title: String, value: String, onCopy: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onCopy).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(zenIcon("edit-copy"), "Copy", Modifier.padding(horizontal = 8.dp).size(18.dp))
+    }
+}
+
+private fun obtainiumInstalled(context: Context): Boolean =
+    Updates.OBTAINIUM_PACKAGES.any { context.packageManager.getLaunchIntentForPackage(it) != null }
+
+private fun openObtainium(context: Context): Boolean {
+    val launch = Updates.OBTAINIUM_PACKAGES.firstNotNullOfOrNull { context.packageManager.getLaunchIntentForPackage(it) } ?: return false
+    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    return true
+}
+
+private fun openLink(context: Context, link: String): Boolean = try {
+    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    true
+} catch (_: ActivityNotFoundException) {
+    false
 }
 
 @Composable

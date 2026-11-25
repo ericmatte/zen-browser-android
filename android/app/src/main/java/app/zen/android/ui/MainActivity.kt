@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity(), ActivityBridge {
     override fun onStart() {
         super.onStart()
         vm.startSyncLoop()
+        vm.checkForUpdates()
     }
 
     override fun onStop() {

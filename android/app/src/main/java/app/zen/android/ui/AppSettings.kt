@@ -63,6 +63,7 @@ data class Preferences(
     val tabCleanup: TabCleanup = TabCleanup.HALF_DAY,
     val selectRecentOnClose: Boolean = true,
     val haptics: Boolean = true,
+    val checkUpdates: Boolean = true,
     val glance: Boolean = true,
     val expandedFolders: Set<String> = emptySet(),
     val collapsedSpaces: Set<String> = emptySet(),
@@ -136,6 +137,7 @@ class AppSettings(context: Context) {
         putString("tabCleanup", p.tabCleanup.name)
         putBoolean("selectRecentOnClose", p.selectRecentOnClose)
         putBoolean("haptics", p.haptics)
+        putBoolean("checkUpdates", p.checkUpdates)
         putBoolean("glance", p.glance)
         putStringSet("expandedFolders", p.expandedFolders)
         putStringSet("collapsedSpaces", p.collapsedSpaces)
@@ -168,6 +170,7 @@ class AppSettings(context: Context) {
             tabCleanup = enumOr(prefs.getString("tabCleanup", null), d.tabCleanup),
             selectRecentOnClose = prefs.getBoolean("selectRecentOnClose", d.selectRecentOnClose),
             haptics = prefs.getBoolean("haptics", d.haptics),
+            checkUpdates = prefs.getBoolean("checkUpdates", d.checkUpdates),
             glance = prefs.getBoolean("glance", d.glance),
             expandedFolders = prefs.getStringSet("expandedFolders", emptySet()).orEmpty().toSet(),
             collapsedSpaces = prefs.getStringSet("collapsedSpaces", emptySet()).orEmpty().toSet(),

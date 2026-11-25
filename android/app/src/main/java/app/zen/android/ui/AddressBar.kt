@@ -335,7 +335,7 @@ private fun AddressBar(
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEdit() },
                 )
                 NewTabButton(vm)
-                MenuButton(menu)
+                MenuButton(menu, badge = vm.update != null)
             }
         }
     }
@@ -373,7 +373,7 @@ private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSi
                 TitleLabel(vm.title.ifBlank { UrlInput.display(vm.url) }, Modifier.sideways())
             }
             NewTabButton(vm)
-            MenuButton(menu)
+            MenuButton(menu, badge = vm.update != null, landscape = true)
         }
     }
 }
@@ -461,8 +461,8 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
 
 @Composable
 private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false, spinning: Boolean = false) {
-    Row(modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp), loading, spinning)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 7.dp), loading, spinning)
         TitleLabel(title, Modifier)
     }
 }
@@ -513,7 +513,7 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
     val tint = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface
     Box(
         Modifier
-            .size(48.dp)
+            .size(BarButtonWidth, 48.dp)
             .pressScale()
             .clip(RoundedCornerShape(24.dp))
             .onGloballyPositioned { origin = it.positionInRoot() }
@@ -643,7 +643,8 @@ private fun AppIcon(app: NativeApp) {
     if (bitmap != null) androidx.compose.foundation.Image(bitmap, null, Modifier.size(20.dp))
 }
 
-private val MenuButtonSize = 48.dp
+/** Bar buttons keep a 48dp-tall touch target but sit closer together than Material's 48dp squares. */
+private val BarButtonWidth = 42.dp
 
 /** The landscape strip's "⋯" centre, above the menu's bottom (strip padding 4dp + half a button, minus the menu's 8dp lift). */
 private val MenuTailFromBottom = 20.dp
@@ -662,7 +663,7 @@ private fun NewTabButton(vm: BrowserViewModel) {
         tooltip = { PlainTooltip { Text("New tab") } },
         state = rememberTooltipState(),
     ) {
-        IconButton(onClick = vm::openLauncher, modifier = Modifier.pressScale()) {
+        IconButton(onClick = vm::openLauncher, modifier = Modifier.size(BarButtonWidth, 48.dp).pressScale()) {
             Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
         }
     }
@@ -670,16 +671,18 @@ private fun NewTabButton(vm: BrowserViewModel) {
 
 /** Tap toggles the "⋯" menu; holding it opens the menu and the finger can slide onto an entry, like iOS. */
 @Composable
-private fun MenuButton(menu: BarMenuState) {
+private fun MenuButton(menu: BarMenuState, badge: Boolean, landscape: Boolean = false) {
     val haptics = LocalHapticFeedback.current
     var origin by remember { mutableStateOf(Offset.Zero) }
     val open by animateFloatAsState(if (menu.open) 1f else 0f, tween(160), label = "menuOpen")
+    // In the floating bar the highlight sits in its rounded end, so its right corners share the bar's centre.
+    val highlight = if (landscape) RoundedCornerShape(12.dp) else RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp, topEnd = BarHeight / 2 - 5.dp, bottomEnd = BarHeight / 2 - 5.dp)
     Box(
         Modifier
-            .size(48.dp)
+            .size(if (landscape) 48.dp else BarButtonWidth + 2.dp, 48.dp)
             .pressScale()
-            .padding(6.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .padding(start = 3.dp, end = 5.dp, top = 3.dp, bottom = 3.dp)
+            .clip(highlight)
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f * open))
             .onGloballyPositioned { origin = it.positionInRoot() }
             .pointerInput(menu) {
@@ -705,7 +708,8 @@ private fun MenuButton(menu: BarMenuState) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+        Icon(zenIcon("menu"), if (badge) "More, update available" else "More", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+        if (badge) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp))
     }
 }
 
@@ -729,7 +733,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
     LaunchedEffect(menu.open, vm.url) {
         if (menu.open) nativeApp = withContext(Dispatchers.Default) { if (vm.hasPage) AppLinks.find(context, vm.url) else null }
     }
-    val bubble = if (landscape) BubbleShape(TailSide.Start, MenuTailFromBottom) else BubbleShape(TailSide.Bottom, MenuButtonSize / 2)
+    val bubble = if (landscape) BubbleShape(TailSide.Start, MenuTailFromBottom) else BubbleShape(TailSide.Bottom, (BarButtonWidth + 2.dp) / 2)
     AnimatedVisibility(
         menu.open,
         modifier = modifier,
@@ -775,7 +779,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
-                fun Item(label: String, icon: String, leading: (@Composable () -> Unit)? = null, action: () -> Unit) {
+                fun Item(label: String, icon: String, leading: (@Composable () -> Unit)? = null, badge: Boolean = false, action: () -> Unit) {
                     val run = {
                         close()
                         action()
@@ -791,6 +795,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                     ) {
                         if (leading != null) Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { leading() } else Icon(zenIcon(icon), null, Modifier.size(18.dp))
                         Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
+                        if (badge) UpdateDot(Modifier.padding(start = 8.dp))
                     }
                 }
                 nativeApp?.let { app ->
@@ -801,7 +806,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
                 Item("Find in page", "search-page") { vm.startFind() }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
-                Item("Settings", "settings") { vm.showSettings = true }
+                Item("Settings", "settings", badge = vm.update != null) { vm.showSettings = true }
             }
         }
     }
