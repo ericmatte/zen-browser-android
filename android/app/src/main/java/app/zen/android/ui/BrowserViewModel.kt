@@ -18,6 +18,8 @@ import app.zen.android.browser.Dismissal
 import app.zen.android.browser.EmptySelection
 import app.zen.android.browser.Gecko
 import app.zen.android.browser.History
+import app.zen.android.browser.HistorySort
+import app.zen.android.browser.RecentSearches
 import app.zen.android.browser.Visit
 import app.zen.android.browser.PRIVATE_PREFIX
 import app.zen.android.browser.PageRequests
@@ -67,7 +69,7 @@ private fun isLocalOnly(tabId: String) =
 
 sealed interface Suggestion {
     data class OpenTab(val tab: TabItem) : Suggestion
-    data class Search(val text: String) : Suggestion
+    data class Search(val text: String, val recent: Boolean = false) : Suggestion
     data class Visited(val visit: Visit) : Suggestion
 }
 
@@ -174,7 +176,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             when {
                 privateRequested -> startPrivateBrowsing()
                 link != null -> openIncoming(link)
-                else -> launcherOpen = true
+                else -> openLauncher()
             }
             startSyncLoop()
             while (isActive) {
@@ -282,6 +284,33 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun openLauncher() {
         clearSuggestions()
         launcherOpen = true
+        suggest("")
+    }
+
+    private var recentSearches = RecentSearches.decode(settings.string("recentSearches"))
+
+    private fun rememberSearch(input: String) {
+        if (privateMode || !settings.state.value.rememberHistory) return
+        if (!UrlInput.isSearch(input, settings.state.value.searchEngine)) return
+        recentSearches = RecentSearches.add(recentSearches, input)
+        settings.putString("recentSearches", RecentSearches.encode(recentSearches))
+    }
+
+    /** What the search shows before anything is typed: recent searches, then recently visited pages. Nothing in private. */
+    private fun startSuggestions(): List<Suggestion> {
+        if (privateMode) return emptyList()
+        val searches = recentSearches.take(3).map { Suggestion.Search(it, recent = true) }
+        val pages = if (settings.state.value.historyInSuggestions) {
+            // Result pages repeat the recent searches above them, so only real pages are listed.
+            val results = settings.state.value.searchEngine.search("")
+            visits.browse("", null, HistorySort.LAST_VISITED)
+                .filter { it.url != url && !it.url.startsWith(results) }
+                .take(4)
+                .map { Suggestion.Visited(it) }
+        } else {
+            emptyList()
+        }
+        return searches + pages
     }
 
     fun closeLauncher() {
@@ -303,6 +332,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     /** Text typed in the launcher opens in a new tab of the current space, like desktop's new-tab search. */
     fun launch(input: String) {
         if (input.isBlank()) return closeLauncher()
+        rememberSearch(input)
         clearSuggestions()
         launcherOpen = false
         newTab(UrlInput.resolve(input, settings.state.value.searchEngine))
@@ -342,6 +372,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun navigate(input: String) {
         val target = UrlInput.resolve(input, settings.state.value.searchEngine)
+        rememberSearch(input)
         if (!hasPage) return newTab(target)
         session?.loadUri(target) ?: selectTab(activeTab, target)
         suggestions = emptyList()
@@ -568,7 +599,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun suggest(text: String) {
         suggestJob?.cancel()
         val query = text.trim()
-        if (query.isEmpty() || query == url) {
+        if (query.isEmpty()) {
+            suggestions = startSuggestions()
+            return
+        }
+        if (query == url) {
             suggestions = emptyList()
             return
         }

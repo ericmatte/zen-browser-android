@@ -27,14 +27,16 @@ The app reuses desktop code or ports it closely:
 ## Features
 
 - Home: at launch nothing loads; the bottom bar morphs into the search, docked
-  above the keyboard. Results (open tabs, history, suggestions) appear above
-  it once you type, best match nearest the bar.
+  above the keyboard. Before typing it lists recent searches and pages; while
+  typing, open tabs, history and suggestions, best match nearest the bar.
 - Sidebar: spaces (swipe between them, colours blend with the finger), pinned
   tabs, folders, the "Clear" separator, temporary tabs at the bottom with
   "New Tab" last, space switcher (hold a space for its menu). History opens
   inside the sidebar, which grows full width like desktop's library.
   Tap a space name to rename it (synced); tap its icon to fold pinned tabs.
-  Swipe a tab left to close (or unpin), right to pin (or unpin). Hold an item
+  Swipe a tab right to pin (or unpin). Swipe a temporary tab left to uncover
+  its archive button (tap it to archive; touch elsewhere to put it back); a
+  pinned tab swiped left is unpinned. Hold an item
   for its menu; slide onto an entry and release, or move away to drag it
   (reorder, pin, or drop into Essentials).
 - Essentials are local to the phone (never synced) and hold up to 12 tabs.
@@ -47,7 +49,8 @@ The app reuses desktop code or ports it closely:
   slide to the previous or next tab (the title slides along), flick up for a
   new tab. Hold the sidebar button for recent tabs. Find in page is the bar
   itself. The bar steps aside while a page's own text field uses the keyboard.
-- Landscape: the bar rests as a vertical strip on the left edge. Rotating
+- Landscape: the bar rests as a full-height strip on the left edge, painted
+  in the page's colour like the status bar. Rotating
   while a video plays enters fullscreen; rotating back leaves it.
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
   also works.

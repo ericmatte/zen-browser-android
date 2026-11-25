@@ -34,6 +34,12 @@ object UrlInput {
         }
     }
 
+    /** True when [input] would be sent to the search engine rather than opened as an address. */
+    fun isSearch(input: String, engine: SearchEngine = SearchEngine.GOOGLE): Boolean {
+        val text = input.trim()
+        return text.isNotEmpty() && resolve(text, engine) == engine.search(text)
+    }
+
     /** Both Google (client=firefox) and DuckDuckGo (type=list) answer with the OpenSearch shape `[query, [suggestions…]]`. */
     fun parseSuggestions(body: String, limit: Int = 5): List<String> = runCatching {
         val list = JSONArray(body).getJSONArray(1)

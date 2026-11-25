@@ -49,6 +49,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -114,9 +115,6 @@ val EditBarHeight = 58.dp
 /** At rest the bar leaves this share of the screen width free on each side. */
 const val BarSideInset = 0.05f
 
-/** In landscape the resting strip leaves this share of the screen height free above and below. */
-const val SideBarInset = 0.125f
-
 /** Left-edge insets (cutout, landscape navigation bar) the vertical bar sits over. */
 val SideBarInsets: WindowInsets
     @Composable get() = WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Start)
@@ -138,6 +136,7 @@ fun BottomChrome(
     swipe: PageSwipe,
     menu: BarMenuState,
     landscape: Boolean,
+    edgeColor: Color,
     modifier: Modifier,
 ) {
     val searching = vm.launcherOpen
@@ -167,8 +166,12 @@ fun BottomChrome(
         }
     }
 
-    // A web page's own text field took the keyboard: the bar steps aside with it.
-    val webKeyboard = imeVisible && !active
+    // A web page's own text field took the keyboard: the bar steps aside with it. The bar's own keyboard,
+    // still sliding away after editing ends, must not count, or the bar would blink out and back.
+    val barKeyboard = remember { BooleanArray(1) }
+    if (active && imeVisible) barKeyboard[0] = true
+    if (!imeVisible) barKeyboard[0] = false
+    val webKeyboard = imeVisible && !active && !barKeyboard[0]
     // Docks only once the keyboard is really up, so the bar never drops to the screen edge while waiting for it.
     val dock by animateFloatAsState(if (active && imeVisible) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
     Box(modifier.fillMaxSize()) {
@@ -182,7 +185,7 @@ fun BottomChrome(
                 enter = slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 420f)) { -it },
                 exit = slideOutHorizontally(tween(160)) { -it },
             ) {
-                SideBar(vm, onEdit = { onEditingChange(true) }, onSidebar, recents, menu)
+                SideBar(vm, edgeColor, onEdit = { onEditingChange(true) }, onSidebar, recents, menu)
             }
         }
         Column(
@@ -297,7 +300,7 @@ private fun AddressBar(
                         done()
                     } else {
                         field = TextFieldValue("")
-                        vm.clearSuggestions()
+                        vm.suggest("")
                     }
                 }) {
                     Icon(zenIcon("close"), "Clear", Modifier.size(16.dp), tint = onSurface)
@@ -329,17 +332,24 @@ private fun AddressBar(
     }
 }
 
-/** Landscape resting bar: glued to the left edge, title running sideways, icons kept upright. */
+/**
+ * Landscape resting bar: a full-height strip on the left edge, painted like
+ * the status bar (the page's own colour), title running sideways and icons
+ * upright. Its content turns light or dark to stay readable on that colour.
+ */
 @Composable
-private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> Unit, recents: RecentsMenu, menu: BarMenuState) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
-    GlassSurface(
-        modifier = Modifier.fillMaxHeight(1f - 2 * SideBarInset),
-        shape = RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp),
-        tint = if (vm.privateMode) PrivateTint else null,
-    ) {
+private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSidebar: () -> Unit, recents: RecentsMenu, menu: BarMenuState) {
+    val content = if (color.isLight()) Color(0xFF1A1A1E) else Color.White
+    MaterialTheme(colorScheme = MaterialTheme.colorScheme.copy(onSurface = content)) {
         Column(
-            Modifier.fillMaxHeight().windowInsetsPadding(SideBarInsets).width(BarHeight).padding(vertical = 2.dp),
+            Modifier
+                .fillMaxHeight()
+                .background(color)
+                .windowInsetsPadding(SideBarInsets)
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .width(BarHeight)
+                .padding(vertical = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
@@ -354,7 +364,7 @@ private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> U
                 TitleLabel(vm.title.ifBlank { UrlInput.display(vm.url) }, Modifier.sideways())
             }
             IconButton(onClick = vm::openLauncher) {
-                Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
+                Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = content)
             }
             MenuButton(menu)
         }
@@ -794,7 +804,7 @@ fun SuggestionRow(suggestion: Suggestion, onClick: () -> Unit) {
                 )
             }
             is Suggestion.Search -> {
-                Icon(zenIcon("search-glass"), null, Modifier.size(16.dp), tint = muted)
+                Icon(zenIcon(if (suggestion.recent) "history" else "search-glass"), null, Modifier.size(16.dp), tint = muted)
                 Text(suggestion.text, Modifier.padding(start = 18.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }

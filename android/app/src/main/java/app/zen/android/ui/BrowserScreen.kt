@@ -171,7 +171,6 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         val sideBar = landscape && !vm.fullScreen
         val barLift = BarHeight + BarMargin + barBottomMargin() + 6.dp
         val inset = maxWidth * BarSideInset
-        val sideInset = maxHeight * SideBarInset
 
         Box(
             Modifier
@@ -231,13 +230,14 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     swipe = swipe,
                     menu = menu,
                     landscape = landscape,
+                    edgeColor = statusColor,
                     modifier = Modifier,
                 )
                 val besideBar = Modifier.windowInsetsPadding(SideBarInsets).padding(start = BarHeight + 8.dp)
                 RecentsPopover(
                     recents,
                     if (landscape) {
-                        Modifier.align(Alignment.TopStart).then(besideBar).padding(top = sideInset)
+                        Modifier.align(Alignment.TopStart).statusBarsPadding().then(besideBar).padding(top = 8.dp)
                     } else {
                         Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = inset, bottom = barLift)
                     },
@@ -246,7 +246,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     vm,
                     menu,
                     if (landscape) {
-                        Modifier.align(Alignment.BottomStart).statusBarsPadding().navigationBarsPadding().then(besideBar).padding(top = 8.dp, bottom = sideInset)
+                        Modifier.align(Alignment.BottomStart).statusBarsPadding().navigationBarsPadding().then(besideBar).padding(top = 8.dp, bottom = 8.dp)
                     } else {
                         Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = inset, bottom = barLift)
                     },

@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -62,6 +64,8 @@ object ZenIconSet {
             val viewport = entry.optInt("size", 512).toFloat()
             val fillType = if (entry.optBoolean("evenodd")) PathFillType.EvenOdd else PathFillType.NonZero
             val translate = entry.optJSONArray("translate")
+            // Lucide icons (e.g. desktop's downloads archive.svg) are outlines drawn with a stroke.
+            val stroke = entry.optDouble("stroke", 0.0).toFloat()
             fun nodes(d: String) = PathParser().parsePathString(d).toNodes()
             ImageVector.Builder(name, 24.dp, 24.dp, viewport, viewport).apply {
                 // Desktop SVGs with an offset viewBox (e.g. "4 4 24 24") carry the offset as a translation.
@@ -72,6 +76,14 @@ object ZenIconSet {
                         addGroup(clipPathData = nodes(clipped.getString("clip")))
                         addPath(nodes(clipped.getString("d")), fillType, fill = SolidColor(Color.Black))
                         clearGroup()
+                    } else if (stroke > 0f) {
+                        addPath(
+                            nodes(paths.getString(i)),
+                            stroke = SolidColor(Color.Black),
+                            strokeLineWidth = stroke,
+                            strokeLineCap = StrokeCap.Round,
+                            strokeLineJoin = StrokeJoin.Round,
+                        )
                     } else {
                         addPath(nodes(paths.getString(i)), fillType, fill = SolidColor(Color.Black))
                     }
