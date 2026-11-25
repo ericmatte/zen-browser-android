@@ -41,20 +41,26 @@ The app reuses desktop code or ports it closely:
   its archive button (tap it to archive; touch elsewhere to put it back); a
   pinned tab swiped left is unpinned. Hold an item
   for its menu; slide onto an entry and release, or move away to drag it
-  (reorder, pin, or drop into Essentials).
+  (reorder, pin, or drop into Essentials). While dragging, the rows open a
+  gap where the item will land.
 - Essentials are local to the phone (never synced) and hold up to 12 tabs.
 - Unpinned tabs opened on the phone close after a chosen idle time. Tabs
   opened on desktop are never closed from the phone.
 - Sync runs on its own: at launch, on resume, after each change and every
   5 minutes.
-- Address bar: 90% wide, shows the favicon (green/red lock) and title; tap it
+- Address bar: 90% wide, shows the favicon (green/red lock) and title on the
+  left; its buttons dip when pressed, and holding "+" names it. Tap it
   for the URL and a copy-link button, docked above the keyboard. Swipe it to
   slide to the previous or next tab (the title slides along), flick up for a
   new tab. Hold the sidebar button for recent tabs. Find in page is the bar
   itself. The bar steps aside while a page's own text field uses the keyboard.
 - Landscape: the bar rests as a full-height strip on the left edge, painted
   in the page's colour like the status bar. Rotating
-  while a video plays enters fullscreen; rotating back leaves it.
+  while a video plays (silent ones too) enters fullscreen; rotating back
+  leaves it.
+- "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
+  claims the page's address.
+- Pages laid out for the phone's width never scroll sideways onto nothing.
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
   also works. Each entry the finger reaches ticks the vibration motor
   (Settings → Haptic feedback, on by default).
