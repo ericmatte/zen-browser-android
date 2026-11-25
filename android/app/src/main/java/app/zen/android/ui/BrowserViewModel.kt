@@ -14,6 +14,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.zen.android.browser.Dismissal
+import app.zen.android.browser.EmptySelection
 import app.zen.android.browser.Gecko
 import app.zen.android.browser.History
 import app.zen.android.browser.Visit
@@ -50,6 +52,9 @@ import org.mozilla.geckoview.GeckoSession.FinderResult
 import org.mozilla.geckoview.WebResponse
 
 const val SCRATCH_TAB = "__scratch__"
+
+/** No page is shown: the launch search, or private mode waiting for the user to pick a tab. */
+const val NO_TAB = ""
 const val LOGIN_TAB = "__login__"
 const val GLANCE_TAB = "__glance__"
 
@@ -90,7 +95,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var ready by mutableStateOf(false)
         private set
     var activeSpace by mutableStateOf<String?>(null)
-    var activeTab by mutableStateOf(SCRATCH_TAB)
+    var activeTab by mutableStateOf(NO_TAB)
         private set
     var session by mutableStateOf<GeckoSession?>(null)
         private set
@@ -162,10 +167,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         viewModelScope.launch {
             repository.load()
             refreshEmail()
-            val first = repository.view.value.spaces().firstOrNull()
-            activeSpace = first?.uuid
-            val tab = first?.tabs?.firstOrNull()
-            if (tab != null) selectTab(tab.id, tab.url) else selectTab(SCRATCH_TAB, home)
+            activeSpace = repository.view.value.spaces().firstOrNull()?.uuid
             ready = true
             val link = incoming
             incoming = null
@@ -251,6 +253,21 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun selectTab(tab: TabItem) = selectTab(tab.id, tab.url)
 
+    val hasPage get() = activeTab != NO_TAB
+
+    private fun showNothing() {
+        lastSeen[activeTab] = System.currentTimeMillis()
+        sessions.setActive(NO_TAB)
+        activeTab = NO_TAB
+        session = null
+        url = ""
+        title = ""
+        canGoBack = false
+        progress = 100
+        chromeVisible = true
+        endFind()
+    }
+
     private fun knownTab(id: String): TabItem? =
         privateTabs.firstOrNull { it.id == id } ?: repository.view.value.tab(id)
 
@@ -268,17 +285,27 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun closeLauncher() {
+        if (!launcherOpen) return
         clearSuggestions()
         launcherOpen = false
+        if (!hasPage) showFallback()
+    }
+
+    fun showFallback() {
+        val spaceTabs = space(activeSpace)?.tabs.orEmpty()
+        when (val next = EmptySelection.afterSearch(privateMode, privateTabs.map { it.id }, spaceTabs.map { it.id })) {
+            is Dismissal.Select -> knownTab(next.tabId)?.let(::selectTab)
+            Dismissal.LeavePrivate -> togglePrivateMode()
+            Dismissal.Blank -> selectTab(SCRATCH_TAB, home)
+        }
     }
 
     /** Text typed in the launcher opens in a new tab of the current space, like desktop's new-tab search. */
     fun launch(input: String) {
-        closeLauncher()
-        if (input.isBlank()) return
-        val target = UrlInput.resolve(input, settings.state.value.searchEngine)
-        // Entering private mode opens a placeholder home tab; the first search replaces it instead of piling up tabs.
-        if (isPrivateTab(activeTab) && !canGoBack && url.trimEnd('/') == home.trimEnd('/')) navigate(target) else newTab(target)
+        if (input.isBlank()) return closeLauncher()
+        clearSuggestions()
+        launcherOpen = false
+        newTab(UrlInput.resolve(input, settings.state.value.searchEngine))
     }
 
     fun pick(suggestion: Suggestion, inNewTab: Boolean) {
@@ -307,6 +334,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun navigate(input: String) {
         val target = UrlInput.resolve(input, settings.state.value.searchEngine)
+        if (!hasPage) return newTab(target)
         session?.loadUri(target) ?: selectTab(activeTab, target)
         suggestions = emptyList()
     }
@@ -354,7 +382,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             privateMode = true
             // Private browsing always renders sites dark, which also tells it apart from normal mode at a glance.
             Gecko.setColorScheme(getApplication(), GeckoRuntimeSettings.COLOR_SCHEME_DARK)
-            privateTabs.lastOrNull()?.let(::selectTab) ?: newPrivateTab()
+            showNothing()
         }
     }
 

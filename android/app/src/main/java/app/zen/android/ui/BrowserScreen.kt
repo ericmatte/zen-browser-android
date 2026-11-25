@@ -30,6 +30,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.tappableElement
@@ -69,6 +72,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.zen.android.browser.EmptySelection
 import app.zen.android.browser.PageColor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -76,7 +80,7 @@ import kotlinx.coroutines.launch
 import org.mozilla.geckoview.GeckoView
 import kotlin.math.abs
 
-val PrivateTint = Color(0xFF3B2A5C)
+val PrivateTint = Color(0xFF17171A)
 val BarHeight = 52.dp
 val BarMargin = 8.dp
 
@@ -102,6 +106,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     BackHandler(vm.canGoBack) { vm.goBack() }
     BackHandler(drawer.isOpen) { drawer.close() }
     BackHandler(editing) { editing = false }
+    BackHandler(vm.launcherOpen) { vm.closeLauncher() }
     BackHandler(vm.findQuery != null) { vm.endFind() }
     BackHandler(vm.fullScreen) { vm.exitFullScreen() }
 
@@ -116,11 +121,20 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     SystemBars(lightIcons = !(if (coveredByScreen) background else statusColor).isLight(), hidden = vm.fullScreen)
 
     fun enterPrivate() = scope.launch {
+        val search = EmptySelection.privateEntryShowsSearch(vm.privateTabs.map { it.id })
         vm.togglePrivateMode()
-        drawer.moveTo(right = !prefs.sidebarRight)
-        delay(120)
-        drawer.closeAndWait()
-        vm.openLauncher()
+        if (search) {
+            vm.openLauncher()
+            drawer.snapClosed()
+            drawer.snapSide(!prefs.sidebarRight)
+        } else {
+            drawer.moveTo(right = !prefs.sidebarRight)
+        }
+    }
+
+    // The private sidebar opens with no page behind it; closing it without a choice falls back to the latest private tab.
+    LaunchedEffect(drawer.isOpen, vm.hasPage, vm.launcherOpen) {
+        if (!drawer.isOpen && !vm.hasPage && !vm.launcherOpen && vm.ready) vm.showFallback()
     }
 
     fun leavePrivate() = scope.launch {
@@ -136,6 +150,11 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         drawer.widthPx = widthPx
         drawer.screenPx = screenPx
         val swipe = remember(screenPx) { PageSwipe(scope, pageShift, screenPx, vm::hasNeighbor, vm::switchTab) }
+        val landscape = maxWidth > maxHeight
+        val sideBar = landscape && !vm.fullScreen
+        val barLift = BarHeight + BarMargin + barBottomMargin() + 6.dp
+        val inset = maxWidth * BarSideInset
+        val sideInset = maxHeight * BarSideInset
 
         Box(
             Modifier
@@ -150,14 +169,22 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         ) {
             Column(Modifier.fillMaxSize()) {
                 if (!vm.fullScreen) Spacer(Modifier.fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars))
-                Box(Modifier.weight(1f).fillMaxWidth().background(background)) {
-                    PageView(vm, prefs.tintStatusBar, Modifier.fillMaxSize().graphicsLayer { translationX = pageShift.value })
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .background(background)
+                        .then(if (sideBar) Modifier.windowInsetsPadding(SideBarInsets).padding(start = BarHeight) else Modifier),
+                ) {
+                    PageView(vm, prefs.tintStatusBar, landscape, Modifier.fillMaxSize().graphicsLayer { translationX = pageShift.value })
+                    if (!vm.hasPage) Box(Modifier.fillMaxSize().background(if (vm.privateMode) PrivateBackdrop else background))
                 }
             }
 
             if (!vm.fullScreen) {
                 EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
                 vm.findQuery?.let { FindBar(vm, Modifier.align(Alignment.TopCenter).statusBarsPadding()) }
+                LauncherBackdrop(vm)
                 BottomChrome(
                     vm = vm,
                     editing = editing,
@@ -166,10 +193,27 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     recents = recents,
                     swipe = swipe,
                     menu = menu,
-                    modifier = Modifier.align(Alignment.BottomCenter),
+                    landscape = landscape,
+                    modifier = Modifier,
                 )
-                RecentsPopover(recents, Modifier.align(Alignment.BottomStart))
-                BarMenu(vm, menu, Modifier.align(Alignment.BottomEnd))
+                val besideBar = Modifier.windowInsetsPadding(SideBarInsets).padding(start = BarHeight + 8.dp)
+                RecentsPopover(
+                    recents,
+                    if (landscape) {
+                        Modifier.align(Alignment.TopStart).then(besideBar).padding(top = sideInset)
+                    } else {
+                        Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = inset, bottom = barLift)
+                    },
+                )
+                BarMenu(
+                    vm,
+                    menu,
+                    if (landscape) {
+                        Modifier.align(Alignment.BottomStart).statusBarsPadding().navigationBarsPadding().then(besideBar).padding(top = 8.dp, bottom = sideInset)
+                    } else {
+                        Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = inset, bottom = barLift)
+                    },
+                )
             }
         }
 
@@ -224,7 +268,6 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
             }
         }
 
-        Launcher(vm)
         Overlays(vm, dark)
     }
 }
@@ -269,6 +312,8 @@ class DrawerController(private val scope: CoroutineScope) {
     suspend fun moveTo(right: Boolean) = side.animateTo(if (right) 1f else 0f, spring(dampingRatio = 0.85f, stiffness = 260f))
 
     suspend fun snapSide(right: Boolean) = side.snapTo(if (right) 1f else 0f)
+
+    suspend fun snapClosed() = fraction.snapTo(0f)
 
     suspend fun closeAndWait() = fraction.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 500f))
 
@@ -349,12 +394,13 @@ private fun SystemBars(lightIcons: Boolean, hidden: Boolean) {
 }
 
 @Composable
-private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, modifier: Modifier) {
+private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Boolean, modifier: Modifier) {
     var geckoView by remember { mutableStateOf<GeckoView?>(null) }
     val background = MaterialTheme.colorScheme.background
     val density = LocalDensity.current
     val navBar = WindowInsets.navigationBars.getBottom(density)
-    val barSpace = with(density) { (BarHeight + BarMargin + barBottomMargin()).roundToPx() } + navBar
+    // In landscape the bar rests beside the page, so Gecko keeps no room for it at the bottom.
+    val barSpace = if (landscape) 0 else with(density) { (BarHeight + BarMargin + barBottomMargin()).roundToPx() } + navBar
     val shown by animateFloatAsState(if (vm.chromeVisible && !vm.fullScreen) 1f else 0f, tween(220), label = "chrome")
 
     AndroidView(
@@ -374,6 +420,8 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, modifier: Modif
                 view.coverUntilFirstPaint(background.toArgbInt())
                 view.releaseSession()
                 view.setSession(session)
+            } else if (session == null && view.session != null) {
+                view.releaseSession()
             }
             // Gecko lays the page out above the bar, so short pages are never hidden behind it.
             view.setDynamicToolbarMaxHeight(if (vm.fullScreen) 0 else barSpace)

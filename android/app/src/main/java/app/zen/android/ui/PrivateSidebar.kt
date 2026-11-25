@@ -38,7 +38,7 @@ fun PrivateSidebar(vm: BrowserViewModel, onTab: (TabItem) -> Unit, onClose: () -
     Column(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(PrivateTint, Color(0xFF1C1530))))
+            .background(Brush.verticalGradient(listOf(PrivateTint, PrivateBackdrop)))
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {

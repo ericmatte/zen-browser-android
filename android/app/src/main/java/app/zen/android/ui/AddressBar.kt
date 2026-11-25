@@ -5,6 +5,21 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -12,6 +27,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -87,6 +104,23 @@ import app.zen.android.browser.UrlInput
 import app.zen.android.sync.TabItem
 import kotlin.math.abs
 
+/** Height of the bar while typing: a little taller than at rest, like desktop's open urlbar. */
+val EditBarHeight = 58.dp
+
+/** At rest the bar leaves this share of the screen width free on each side. */
+const val BarSideInset = 0.125f
+
+/** Left-edge insets (cutout, landscape navigation bar) the vertical bar sits over. */
+val SideBarInsets: WindowInsets
+    @Composable get() = WindowInsets.displayCutout.union(WindowInsets.navigationBars).only(WindowInsetsSides.Start)
+
+/**
+ * The floating bar. Editing the URL and the new-tab search are the same bar
+ * morphing into its docked, taller form above the keyboard. In landscape it
+ * rests as a vertical strip on the left edge and only the docked form slides
+ * up while typing.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun BottomChrome(
     vm: BrowserViewModel,
@@ -96,33 +130,79 @@ fun BottomChrome(
     recents: RecentsMenu,
     swipe: PageSwipe,
     menu: MutableState<Boolean>,
+    landscape: Boolean,
     modifier: Modifier,
 ) {
-    val dock by animateFloatAsState(if (editing) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
-    Column(modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
-        AnimatedVisibility(editing && vm.suggestions.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-            SuggestionsPanel(vm) { onEditingChange(false) }
+    val searching = vm.launcherOpen
+    val active = editing || searching
+    val focusManager = LocalFocusManager.current
+
+    fun finish() {
+        onEditingChange(false)
+        vm.closeLauncher()
+        vm.clearSuggestions()
+        focusManager.clearFocus()
+    }
+
+    // Hiding the keyboard (back gesture, keyboard button) is how a phone says "blur".
+    val imeVisible = WindowInsets.isImeVisible
+    var imeSeen by remember { mutableStateOf(false) }
+    LaunchedEffect(active, imeVisible) {
+        when {
+            !active -> imeSeen = false
+            imeVisible -> imeSeen = true
+            imeSeen -> {
+                imeSeen = false
+                finish()
+            }
         }
-        AnimatedVisibility(
-            visible = vm.chromeVisible || editing,
-            enter = slideInVertically { it } + fadeIn(),
-            exit = slideOutVertically { it } + fadeOut(),
+    }
+
+    val dock by animateFloatAsState(if (active) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
+    Box(modifier.fillMaxSize()) {
+        if (editing && !searching) {
+            Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { finish() })
+        }
+        if (landscape) {
+            AnimatedVisibility(
+                visible = !active,
+                modifier = Modifier.align(Alignment.CenterStart),
+                enter = slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 420f)) { -it },
+                exit = slideOutHorizontally(tween(160)) { -it },
+            ) {
+                SideBar(vm, onEdit = { onEditingChange(true) }, onSidebar, recents, menu)
+            }
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AddressBar(vm, editing, dock, onEditingChange, onSidebar, recents, swipe, menu)
+            AnimatedVisibility(
+                active && vm.suggestions.isNotEmpty(),
+                enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
+            ) {
+                SuggestionsPanel(vm, inNewTab = searching) { onEditingChange(false) }
+            }
+            AnimatedVisibility(
+                visible = active || (!landscape && vm.chromeVisible),
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+            ) {
+                AddressBar(vm, active, searching, if (landscape) 1f else dock, ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
+            }
         }
     }
 }
 
-/**
- * At rest the bar floats and shows the page title. Tapping it reveals the
- * URL and the bar docks full width on top of the keyboard.
- */
 @Composable
 private fun AddressBar(
     vm: BrowserViewModel,
     editing: Boolean,
+    searching: Boolean,
     dock: Float,
-    onEditingChange: (Boolean) -> Unit,
+    onCancel: () -> Unit,
+    onEdit: () -> Unit,
     onSidebar: () -> Unit,
     recents: RecentsMenu,
     swipe: PageSwipe,
@@ -136,20 +216,22 @@ private fun AddressBar(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
 
-    fun stopEditing() {
-        onEditingChange(false)
+    fun done() {
         vm.clearSuggestions()
         focusManager.clearFocus()
+        onCancel()
     }
 
-    val side = lerp(12.dp, 0.dp, dock)
     val top = lerp(BarMargin, 0.dp, dock)
     val bottom = lerp(barBottomMargin(), 0.dp, dock)
-    val topCorner = lerp(26.dp, 18.dp, dock)
+    val topCorner = lerp(26.dp, 14.dp, dock)
     val bottomCorner = lerp(26.dp, 0.dp, dock)
 
     GlassSurface(
-        modifier = Modifier.padding(start = side, end = side, top = top, bottom = bottom).fillMaxWidth().height(BarHeight),
+        modifier = Modifier
+            .padding(top = top, bottom = bottom)
+            .fillMaxWidth(1f - 2 * BarSideInset * (1f - dock))
+            .height(lerp(BarHeight, EditBarHeight, dock)),
         shape = RoundedCornerShape(topStart = topCorner, topEnd = topCorner, bottomStart = bottomCorner, bottomEnd = bottomCorner),
         tint = if (vm.privateMode) PrivateTint else null,
         solidity = dock,
@@ -159,8 +241,8 @@ private fun AddressBar(
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Icon(zenIcon("search-glass"), null, Modifier.size(18.dp), tint = onSurface.copy(alpha = 0.7f))
                 }
-                LaunchedEffect(Unit) {
-                    field = TextFieldValue(vm.url, TextRange(0, vm.url.length))
+                LaunchedEffect(searching) {
+                    field = if (searching) TextFieldValue("") else TextFieldValue(vm.url, TextRange(0, vm.url.length))
                     focus.requestFocus()
                 }
                 BasicTextField(
@@ -174,26 +256,35 @@ private fun AddressBar(
                     cursorBrush = SolidColor(accent),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
                     keyboardActions = KeyboardActions(onGo = {
-                        vm.navigate(field.text)
-                        stopEditing()
+                        if (searching) vm.launch(field.text) else vm.navigate(field.text)
+                        done()
                     }),
                     modifier = Modifier.weight(1f).focusRequester(focus),
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
-                            if (field.text.isEmpty()) Text("Search or enter address", color = onSurface.copy(alpha = 0.5f))
+                            if (field.text.isEmpty()) Text(if (searching) "Search…" else "Search or enter address", color = onSurface.copy(alpha = 0.5f))
                             inner()
                         }
                     },
                 )
-                IconButton(onClick = {
-                    copyToClipboard(context, vm.url)
-                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                    vm.message = "Link copied"
-                    stopEditing()
-                }) {
-                    Icon(zenIcon("link"), "Copy link", Modifier.size(18.dp), tint = onSurface)
+                if (!searching && vm.hasPage) {
+                    IconButton(onClick = {
+                        copyToClipboard(context, vm.url)
+                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                        vm.message = "Link copied"
+                        done()
+                    }) {
+                        Icon(zenIcon("link"), "Copy link", Modifier.size(18.dp), tint = onSurface)
+                    }
                 }
-                IconButton(onClick = { if (field.text.isEmpty()) stopEditing() else field = TextFieldValue("") }) {
+                IconButton(onClick = {
+                    if (field.text.isEmpty()) {
+                        done()
+                    } else {
+                        field = TextFieldValue("")
+                        vm.clearSuggestions()
+                    }
+                }) {
                     Icon(zenIcon("close"), "Clear", Modifier.size(16.dp), tint = onSurface)
                 }
             } else {
@@ -204,7 +295,7 @@ private fun AddressBar(
                         .weight(1f)
                         .fillMaxHeight()
                         .pageSwipe(vm, swipe)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEditingChange(true) },
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEdit() },
                 )
                 IconButton(onClick = vm::openLauncher) {
                     Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
@@ -219,6 +310,47 @@ private fun AddressBar(
                     .clip(RoundedCornerShape(1.dp)).background(accent),
             )
         }
+    }
+}
+
+/** Landscape resting bar: glued to the left edge, title running sideways, icons kept upright. */
+@Composable
+private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> Unit, recents: RecentsMenu, menu: MutableState<Boolean>) {
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    GlassSurface(
+        modifier = Modifier.fillMaxHeight(1f - 2 * BarSideInset),
+        shape = RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp),
+        tint = if (vm.privateMode) PrivateTint else null,
+    ) {
+        Column(
+            Modifier.fillMaxHeight().windowInsetsPadding(SideBarInsets).width(BarHeight).padding(vertical = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SidebarButton(vm, onSidebar, recents)
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEdit() },
+                contentAlignment = Alignment.Center,
+            ) {
+                TitleLabel(vm, Modifier.sideways())
+            }
+            IconButton(onClick = vm::openLauncher) {
+                Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
+            }
+            IconButton(onClick = { menu.value = !menu.value }) { Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = onSurface) }
+        }
+    }
+}
+
+/** Lays the content out rotated a quarter turn counter-clockwise, so it reads bottom to top. */
+private fun Modifier.sideways(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(
+        Constraints(minWidth = constraints.minHeight, maxWidth = constraints.maxHeight, minHeight = constraints.minWidth, maxHeight = constraints.maxWidth),
+    )
+    layout(placeable.height, placeable.width) {
+        placeable.placeWithLayer(-(placeable.width - placeable.height) / 2, (placeable.width - placeable.height) / 2) { rotationZ = -90f }
     }
 }
 
@@ -352,7 +484,7 @@ class RecentsMenu {
 fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     AnimatedVisibility(
         recents.open,
-        modifier = modifier.navigationBarsPadding().padding(start = 12.dp, bottom = BarHeight + BarMargin + barBottomMargin() + 6.dp),
+        modifier = modifier,
         enter = scaleIn(spring(dampingRatio = 0.75f, stiffness = 500f), initialScale = 0.5f, transformOrigin = TransformOrigin(0.1f, 1f)) + fadeIn(tween(120)),
         exit = scaleOut(tween(140), targetScale = 0.7f, transformOrigin = TransformOrigin(0.1f, 1f)) + fadeOut(tween(140)),
     ) {
@@ -419,7 +551,7 @@ fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifie
     }
     AnimatedVisibility(
         open.value,
-        modifier = modifier.navigationBarsPadding().padding(end = 12.dp, bottom = BarHeight + BarMargin + barBottomMargin() + 6.dp),
+        modifier = modifier,
         enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 600f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeIn(tween(120)),
         exit = scaleOut(tween(130), targetScale = 0.85f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeOut(tween(130)),
     ) {
@@ -427,9 +559,10 @@ fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifie
             Modifier.width(250.dp),
             shape = RoundedCornerShape(18.dp),
             color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
             shadowElevation = 14.dp,
         ) {
-            Column(Modifier.padding(vertical = 6.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     IconButton(onClick = { close(); vm.goBack() }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
                     IconButton(onClick = { close(); vm.goForward() }) { Icon(zenIcon("forward"), "Forward", Modifier.size(18.dp)) }
@@ -468,17 +601,19 @@ fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifie
 }
 
 @Composable
-private fun SuggestionsPanel(vm: BrowserViewModel, onDone: () -> Unit) {
+private fun SuggestionsPanel(vm: BrowserViewModel, inNewTab: Boolean, onDone: () -> Unit) {
     Surface(
         Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
         color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
+        contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
         shadowElevation = 12.dp,
     ) {
+        // Best match sits at the bottom, right above the bar and the thumb.
         Column(Modifier.padding(vertical = 6.dp)) {
-            vm.suggestions.forEach { suggestion ->
+            vm.suggestions.asReversed().forEach { suggestion ->
                 SuggestionRow(suggestion) {
-                    vm.pick(suggestion, inNewTab = false)
+                    vm.pick(suggestion, inNewTab)
                     onDone()
                 }
             }
