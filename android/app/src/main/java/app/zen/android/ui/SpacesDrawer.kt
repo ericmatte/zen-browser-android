@@ -100,6 +100,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import app.zen.android.sync.FolderItem
 import app.zen.android.sync.LocalEdit
@@ -498,6 +499,14 @@ private data object DividerRow : Row {
 
 private const val FILLER_KEY = "__filler"
 
+private val SidebarRowHeight = 46.dp
+private val SidebarIconSize = 20.dp
+private val SidebarFolderIconSize = 24.dp
+private val SidebarIconGap = 12.dp
+
+@Composable
+private fun sidebarText() = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
+
 private data object NewTabRow : Row {
     override val key = "__newtab"
 }
@@ -594,24 +603,29 @@ private fun SpacePage(
             DividerRow -> Row(modifier.fillMaxWidth().height(28.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)))
                 if (space.regularTabs.isNotEmpty()) {
-                    Text(
-                        "↓ Clear",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs(space.uuid) }
-                            .padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
-                    )
+                    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(
+                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs(space.uuid) }
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(zenIcon("dart-down"), null, Modifier.size(14.dp), tint = muted)
+                        Text("Clear", Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = muted)
+                    }
                 }
             }
+            // Laid out exactly like a tab row, so its icon and label line up with the tabs above.
             NewTabRow -> Row(
-                modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable {
+                modifier.fillMaxWidth().height(SidebarRowHeight).clip(RoundedCornerShape(10.dp)).clickable {
                     onClose()
                     vm.openLauncher()
                 }.padding(horizontal = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(zenIcon("plus"), null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
-                Text("New Tab", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurface)
+                Box(Modifier.size(SidebarIconSize), contentAlignment = Alignment.Center) {
+                    Icon(zenIcon("plus"), null, Modifier.size(SidebarIconSize - 2.dp), tint = MaterialTheme.colorScheme.onSurface)
+                }
+                Text("New Tab", Modifier.padding(start = SidebarIconGap), style = sidebarText(), color = MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -727,7 +741,7 @@ private fun SpaceHeader(space: Space, collapsed: Boolean, gestures: SidebarGestu
                 value = field,
                 onValueChange = { field = it },
                 singleLine = true,
-                textStyle = MaterialTheme.typography.titleMedium.copy(color = onSurface, fontWeight = FontWeight.SemiBold),
+                textStyle = MaterialTheme.typography.titleMedium.copy(color = onSurface, fontWeight = FontWeight.SemiBold, fontSize = 17.sp),
                 cursorBrush = SolidColor(onSurface),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { commit() }),
@@ -743,7 +757,7 @@ private fun SpaceHeader(space: Space, collapsed: Boolean, gestures: SidebarGestu
         } else {
             Text(
                 space.name,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = 17.sp),
                 fontWeight = FontWeight.SemiBold,
                 color = onSurface,
                 maxLines = 1,
@@ -775,24 +789,24 @@ private fun FolderEntry(
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(SidebarRowHeight)
                 .onGloballyPositioned { gestures.hitRects[folder.id] = it.boundsInRoot() to HeldFolder(folder, spaceUuid, it.boundsInRoot()) }
                 .clip(RoundedCornerShape(10.dp))
                 .clickable { vm.settings.toggleFolder(folder.id) }
                 .padding(start = (10 + depth * 14).dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FolderIcon(folder.icon, open = expanded, active = !expanded && containsActive, size = 22.dp)
+            FolderIcon(folder.icon, open = expanded, active = !expanded && containsActive, size = SidebarFolderIconSize)
             Text(
                 folder.name,
-                Modifier.weight(1f).padding(start = 12.dp),
+                Modifier.weight(1f).padding(start = SidebarIconGap - (SidebarFolderIconSize - SidebarIconSize)),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodyMedium,
+                style = sidebarText(),
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
-            Icon(Icons.Default.KeyboardArrowRight, if (expanded) "Collapse" else "Expand", Modifier.size(18.dp).rotate(chevron), tint = MaterialTheme.colorScheme.onSurface)
+            Icon(Icons.Default.KeyboardArrowRight, if (expanded) "Collapse" else "Expand", Modifier.size(20.dp).rotate(chevron), tint = MaterialTheme.colorScheme.onSurface)
         }
         folder.items.forEach { child ->
             val active = child.flattenTabs().any { it.id == vm.activeTab }
@@ -838,20 +852,20 @@ private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, onClick: () -> U
     Row(
         Modifier
             .fillMaxWidth()
-            .height(40.dp)
+            .height(SidebarRowHeight)
             .clip(RoundedCornerShape(10.dp))
             .background(background)
             .clickable(onClick = onClick)
             .padding(start = (10 + depth * 14).dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Favicon(tab.url, tab.icon, 18.dp)
+        Favicon(tab.url, tab.icon, SidebarIconSize)
         Text(
             tab.title,
-            Modifier.padding(start = 12.dp),
+            Modifier.padding(start = SidebarIconGap),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyMedium,
+            style = sidebarText(),
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
         )
@@ -945,12 +959,12 @@ private fun HeldPreview(held: Held) {
     when (held) {
         is HeldEssential -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Favicon(held.tab.url, held.tab.icon, 20.dp) }
         is HeldTab -> Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Favicon(held.tab.url, held.tab.icon, 18.dp)
-            Text(held.tab.title, Modifier.padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, style = MaterialTheme.typography.bodyMedium)
+            Favicon(held.tab.url, held.tab.icon, SidebarIconSize)
+            Text(held.tab.title, Modifier.padding(start = SidebarIconGap), maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, style = sidebarText())
         }
         is HeldFolder -> Row(Modifier.fillMaxSize().padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            FolderIcon(held.folder.icon, open = false, active = false, size = 22.dp)
-            Text(held.folder.name, Modifier.padding(start = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, style = MaterialTheme.typography.bodyMedium)
+            FolderIcon(held.folder.icon, open = false, active = false, size = SidebarFolderIconSize)
+            Text(held.folder.name, Modifier.padding(start = SidebarIconGap - (SidebarFolderIconSize - SidebarIconSize)), maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, style = sidebarText())
         }
     }
 }
@@ -969,7 +983,7 @@ private fun SidebarFooter(
 ) {
     val tint = MaterialTheme.colorScheme.onSurface
     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onLibrary) { Icon(zenIcon("library"), "Library", Modifier.size(18.dp), tint = tint) }
+        IconButton(onClick = onLibrary) { Icon(zenIcon("library"), "Library", Modifier.size(20.dp), tint = tint) }
         LazyRow(
             Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
@@ -979,9 +993,9 @@ private fun SidebarFooter(
         }
         // Sync runs on its own, like desktop; only a failure shows up here.
         if (status is SyncStatus.Failed) {
-            IconButton(onClick = onRetry) { Icon(Icons.Default.Warning, "Sync failed: ${status.message}", Modifier.size(18.dp), tint = Color(0xFFFFB347)) }
+            IconButton(onClick = onRetry) { Icon(Icons.Default.Warning, "Sync failed: ${status.message}", Modifier.size(20.dp), tint = Color(0xFFFFB347)) }
         }
-        IconButton(onClick = onPrivate) { Icon(zenIcon("privateBrowsing"), "Private tabs", Modifier.size(18.dp), tint = tint) }
+        IconButton(onClick = onPrivate) { Icon(zenIcon("privateBrowsing"), "Private tabs", Modifier.size(20.dp), tint = tint) }
     }
 }
 

@@ -717,8 +717,8 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
     AnimatedVisibility(
         menu.open,
         modifier = modifier,
-        enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 600f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeIn(tween(120)),
-        exit = scaleOut(tween(130), targetScale = 0.85f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeOut(tween(130)),
+        enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 1000f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeIn(tween(80)),
+        exit = scaleOut(tween(90), targetScale = 0.85f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeOut(tween(90)),
     ) {
         Surface(
             Modifier.width(250.dp),
