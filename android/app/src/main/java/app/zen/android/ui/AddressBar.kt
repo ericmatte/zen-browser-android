@@ -205,7 +205,7 @@ fun BottomChrome(
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                AddressBar(vm, typing, searching, finding, if (landscape) 1f else dock, ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
+                AddressBar(vm, typing, searching, finding, if (landscape) 1f else dock, typing && vm.suggestions.isNotEmpty(), ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
             }
         }
     }
@@ -218,6 +218,7 @@ private fun AddressBar(
     searching: Boolean,
     finding: Boolean,
     dock: Float,
+    underSuggestions: Boolean,
     onCancel: () -> Unit,
     onEdit: () -> Unit,
     onSidebar: () -> Unit,
@@ -241,7 +242,9 @@ private fun AddressBar(
 
     val top = lerp(BarMargin, 0.dp, dock)
     val bottom = lerp(barBottomMargin(), 0.dp, dock)
-    val topCorner = lerp(26.dp, 14.dp, dock)
+    // Joined to the suggestions panel above it, the bar's top corners go square so the two read as one sheet.
+    val join by animateFloatAsState(if (underSuggestions) 1f else 0f, tween(160), label = "join")
+    val topCorner = lerp(lerp(26.dp, 14.dp, dock), 0.dp, join)
     val bottomCorner = lerp(26.dp, 0.dp, dock)
 
     GlassSurface(
@@ -347,7 +350,7 @@ private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSi
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
-            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp), vm.loading)
+            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp), vm.loading, vm.reloading)
             Box(
                 Modifier
                     .weight(1f)
@@ -425,6 +428,7 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
             vm.title.ifBlank { UrlInput.display(vm.url) }.ifEmpty { "Search or enter address" },
             showIcon = vm.hasPage,
             loading = vm.loading,
+            spinning = vm.reloading,
             modifier = Modifier.graphicsLayer {
                 translationX = offset
                 alpha = 1f - (kotlin.math.abs(offset) / slot).coerceIn(0f, 1f)
@@ -446,9 +450,9 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
 }
 
 @Composable
-private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false) {
+private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false, spinning: Boolean = false) {
     Row(modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp), loading)
+        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp), loading, spinning)
         TitleLabel(title, Modifier)
     }
 }
@@ -471,11 +475,11 @@ val SecureGreen = Color(0xFF2EB872)
 
 /** The page's favicon with a small lock: green and closed on HTTPS, red and open otherwise. */
 @Composable
-private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false) {
+private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false) {
     val web = url.startsWith("http")
     val safe = !web || secure
     Box(modifier.size(24.dp)) {
-        Favicon(url, null, 20.dp, loading = loading)
+        Favicon(url, null, 20.dp, loading = loading, spinning = spinning)
         if (web) {
             Box(
                 Modifier

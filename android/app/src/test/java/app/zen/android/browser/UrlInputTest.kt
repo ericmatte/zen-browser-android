@@ -1,6 +1,8 @@
 package app.zen.android.browser
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class UrlInputTest {
@@ -15,4 +17,11 @@ class UrlInputTest {
     @Test fun `suggestions are read from the opensearch shape`() =
         assertEquals(listOf("zen browser", "zen mode"), UrlInput.parseSuggestions("""["zen",["zen browser","zen mode",""]]"""))
     @Test fun `malformed suggestions are ignored`() = assertEquals(emptyList<String>(), UrlInput.parseSuggestions("<html>"))
+
+    @Test
+    fun `gecko's blank placeholder is never taken for a tab's address`() {
+        assertTrue(UrlInput.isPlaceholder("about:blank"))
+        assertTrue(UrlInput.isPlaceholder(""))
+        assertFalse(UrlInput.isPlaceholder("https://news.ycombinator.com/"))
+    }
 }

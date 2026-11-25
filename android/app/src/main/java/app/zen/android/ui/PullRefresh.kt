@@ -99,11 +99,13 @@ fun Modifier.pullToRefresh(state: PullState, allowed: () -> Boolean, onRefresh: 
 fun PullIndicator(state: PullState, loading: Boolean, modifier: Modifier) {
     val spin = rememberInfiniteTransition(label = "pullSpin")
     val turn by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(800, easing = LinearEasing), RepeatMode.Restart), label = "turn")
-    // Stays while the reload runs (capped, so a page that never settles cannot keep it on screen).
+    // Stays while the reload runs, never longer than RELOAD_FEEDBACK_MILLIS.
     LaunchedEffect(state.refreshing) {
         if (!state.refreshing) return@LaunchedEffect
-        withTimeoutOrNull(1500) { snapshotFlow { loading }.first { it } }
-        withTimeoutOrNull(8000) { snapshotFlow { loading }.first { !it } }
+        withTimeoutOrNull(RELOAD_FEEDBACK_MILLIS) {
+            snapshotFlow { loading }.first { it }
+            snapshotFlow { loading }.first { !it }
+        }
         state.offset.animateTo(0f, tween(220))
         state.refreshing = false
     }

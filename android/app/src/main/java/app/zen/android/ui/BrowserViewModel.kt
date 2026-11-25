@@ -58,6 +58,9 @@ const val SCRATCH_TAB = "__scratch__"
 
 /** No page is shown: the launch search, or private mode waiting for the user to pick a tab. */
 const val NO_TAB = ""
+
+/** Reload feedback (pull indicator, favicon spinner) never outlasts this, even on pages that never settle. */
+const val RELOAD_FEEDBACK_MILLIS = 2000L
 const val LOGIN_TAB = "__login__"
 const val GLANCE_TAB = "__glance__"
 
@@ -253,6 +256,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         recentIds.addFirst(tabId)
         canGoBack = backHistory[tabId] == true
         canGoForward = forwardHistory[tabId] == true
+        reloading = false
         loading = tabId in loadingTabs
         chromeVisible = true
         lastScrollY = 0
@@ -392,15 +396,25 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     /** Pull-to-refresh: always reloads, even while a load is still running. */
-    fun refresh() {
+    /** True for a short while after a reload: the bar swaps the favicon for a spinner even when the icon is known. */
+    var reloading by mutableStateOf(false)
+        private set
+    private var reloadFeedback: Job? = null
+
+    private fun startReload() {
         session?.reload()
+        reloading = true
+        reloadFeedback?.cancel()
+        reloadFeedback = viewModelScope.launch {
+            delay(RELOAD_FEEDBACK_MILLIS)
+            reloading = false
+        }
     }
 
+    fun refresh() = startReload()
+
     fun reload() {
-        if (!loading) {
-            session?.reload()
-            return
-        }
+        if (!loading) return startReload()
         session?.stop()
         loadingTabs.remove(activeTab)
         loading = false
@@ -781,6 +795,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             glanceUrl = url
             return
         }
+        if (UrlInput.isPlaceholder(url)) return
         urls[tabId] = url
         if (tabId == activeTab) this.url = url
         updatePrivateTab(tabId) { it.copy(url = url) }
@@ -813,6 +828,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         if (tabId == activeTab) {
             loading = false
             progress = 100
+            reloading = false
         }
         if (tabId == activeTab) requestCapture()
         if (!isPrivateTab(tabId) && tabId != LOGIN_TAB && !tabId.endsWith(GLANCE_TAB)) {
@@ -820,7 +836,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             persistVisits()
         }
         if (isLocalOnly(tabId)) return
-        val u = urls[tabId] ?: return
+        val u = urls[tabId]?.takeUnless(UrlInput::isPlaceholder) ?: return
         val synced = repository.view.value.tab(tabId) ?: return
         val title = titles[tabId] ?: synced.title
         if (synced.url == u && synced.title == title) return

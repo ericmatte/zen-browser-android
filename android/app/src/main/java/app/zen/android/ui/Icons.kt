@@ -164,16 +164,16 @@ object Favicons {
 }
 
 @Composable
-fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modifier, loading: Boolean = false) {
+fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false) {
     val context = LocalContext.current
     val key = Favicons.host(url) ?: url
     var bitmap by remember(key, dataIcon) { mutableStateOf(if (dataIcon == null) Favicons.cached(key) else null) }
     // Tried again once the page settles: many sites only serve their icon after the page itself.
     LaunchedEffect(key, dataIcon, loading) { if (bitmap == null) bitmap = Favicons.load(context, url, dataIcon) }
     val current = bitmap
-    if (current != null) {
+    if (current != null && !spinning) {
         Image(current, null, modifier.size(size).clip(RoundedCornerShape(size / 5)))
-    } else if (loading) {
+    } else if (loading || spinning) {
         Box(modifier.size(size), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(Modifier.size(size * 0.8f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), strokeWidth = 2.dp)
         }

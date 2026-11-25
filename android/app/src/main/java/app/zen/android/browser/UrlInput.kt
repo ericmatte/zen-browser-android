@@ -49,6 +49,13 @@ object UrlInput {
         return resolve(trimmed, engine)
     }
 
+    /**
+     * Gecko reports about:blank while a fresh session starts, before the real
+     * page loads; taking it as the tab's address would wipe the tab (and sync
+     * the blank page to desktop).
+     */
+    fun isPlaceholder(url: String): Boolean = url.isBlank() || url == "about:blank"
+
     /** True when [input] would be sent to the search engine rather than opened as an address. */
     fun isSearch(input: String, engine: SearchEngine = SearchEngine.GOOGLE): Boolean {
         val text = input.trim()
