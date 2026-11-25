@@ -243,10 +243,12 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                 BarMenu(
                     vm,
                     menu,
+                    landscape,
                     if (landscape) {
                         Modifier.align(Alignment.BottomStart).statusBarsPadding().navigationBarsPadding().then(besideBar).padding(top = 8.dp, bottom = 8.dp)
                     } else {
-                        Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = inset, bottom = barLift)
+                        // The bubble's tail reaches down into the gap above the bar.
+                        Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = inset, bottom = barLift - 3.dp)
                     },
                 )
             }

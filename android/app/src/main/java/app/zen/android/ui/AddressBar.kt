@@ -58,7 +58,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.PlainTooltip
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -292,7 +298,7 @@ private fun AddressBar(
                     },
                 )
                 if (!searching && vm.hasPage) {
-                    IconButton(onClick = {
+                    IconButton(modifier = Modifier.pressScale(), onClick = {
                         copyToClipboard(context, vm.url)
                         haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                         vm.message = "Link copied"
@@ -301,7 +307,7 @@ private fun AddressBar(
                         Icon(zenIcon("link"), "Copy link", Modifier.size(18.dp), tint = onSurface)
                     }
                 }
-                IconButton(onClick = {
+                IconButton(modifier = Modifier.pressScale(), onClick = {
                     if (field.text.isEmpty()) {
                         done()
                     } else {
@@ -322,9 +328,7 @@ private fun AddressBar(
                         .pageSwipe(vm, swipe)
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEdit() },
                 )
-                IconButton(onClick = vm::openLauncher) {
-                    Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
-                }
+                NewTabButton(vm)
                 MenuButton(menu)
             }
         }
@@ -362,9 +366,7 @@ private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSi
             ) {
                 TitleLabel(vm.title.ifBlank { UrlInput.display(vm.url) }, Modifier.sideways())
             }
-            IconButton(onClick = vm::openLauncher) {
-                Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = content)
-            }
+            NewTabButton(vm)
             MenuButton(menu)
         }
     }
@@ -423,7 +425,7 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
         shift < 0f -> vm.neighbor(1)?.let { it to offset + slot }
         else -> null
     }
-    Box(modifier.clipToBounds().onSizeChanged { slot = it.width.coerceAtLeast(1) }, contentAlignment = Alignment.Center) {
+    Box(modifier.clipToBounds().onSizeChanged { slot = it.width.coerceAtLeast(1) }, contentAlignment = Alignment.CenterStart) {
         Identity(
             vm.url,
             vm.secure,
@@ -469,7 +471,6 @@ private fun TitleLabel(title: String, modifier: Modifier) {
         style = MaterialTheme.typography.bodyLarge,
         fontWeight = FontWeight.Medium,
         color = MaterialTheme.colorScheme.onSurface,
-        textAlign = TextAlign.Center,
     )
 }
 
@@ -507,6 +508,7 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
     Box(
         Modifier
             .size(48.dp)
+            .pressScale()
             .clip(RoundedCornerShape(24.dp))
             .onGloballyPositioned { origin = it.positionInRoot() }
             .pointerInput(Unit) {
@@ -629,9 +631,29 @@ fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     }
 }
 
+private val MenuButtonSize = 48.dp
+
+/** The landscape strip's "⋯" centre, above the menu's bottom (strip padding 4dp + half a button, minus the menu's 8dp lift). */
+private val MenuTailFromBottom = 20.dp
+
 class BarMenuState {
     var open by mutableStateOf(false)
     val select = SlideSelect()
+}
+
+/** "+" opens the new-tab search; holding it names it, like any icon-only button. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewTabButton(vm: BrowserViewModel) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above, 8.dp),
+        tooltip = { PlainTooltip { Text("New tab") } },
+        state = rememberTooltipState(),
+    ) {
+        IconButton(onClick = vm::openLauncher, modifier = Modifier.pressScale()) {
+            Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+        }
+    }
 }
 
 /** Tap toggles the "⋯" menu; holding it opens the menu and the finger can slide onto an entry, like iOS. */
@@ -639,10 +661,14 @@ class BarMenuState {
 private fun MenuButton(menu: BarMenuState) {
     val haptics = LocalHapticFeedback.current
     var origin by remember { mutableStateOf(Offset.Zero) }
+    val open by animateFloatAsState(if (menu.open) 1f else 0f, tween(160), label = "menuOpen")
     Box(
         Modifier
             .size(48.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .pressScale()
+            .padding(6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f * open))
             .onGloballyPositioned { origin = it.positionInRoot() }
             .pointerInput(menu) {
                 awaitEachGesture {
@@ -673,7 +699,7 @@ private fun MenuButton(menu: BarMenuState) {
 
 /** The "⋯" menu, anchored just above the bar (the system dropdown keeps a 48dp gap from screen edges). */
 @Composable
-fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
+fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifier: Modifier) {
     val context = LocalContext.current
     fun close() {
         menu.open = false
@@ -687,6 +713,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
         )
     }
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+    val bubble = if (landscape) BubbleShape(TailSide.Start, MenuTailFromBottom) else BubbleShape(TailSide.Bottom, MenuButtonSize / 2)
     AnimatedVisibility(
         menu.open,
         modifier = modifier,
@@ -695,12 +722,12 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
     ) {
         Surface(
             Modifier.width(250.dp),
-            shape = RoundedCornerShape(18.dp),
+            shape = bubble,
             color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
             shadowElevation = 14.dp,
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+            Column(Modifier.padding(bubble.contentPadding).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
                 // A disabled entry is dimmed, ignores taps and slides, and leaves the menu open.
                 @Composable
                 fun Nav(icon: String, label: String, enabled: Boolean = true, action: () -> Unit) {
@@ -856,8 +883,8 @@ private fun RowScope.FindContent(vm: BrowserViewModel) {
         },
     )
     Text(vm.findResult, style = MaterialTheme.typography.labelMedium, color = onSurface.copy(alpha = 0.7f))
-    IconButton(onClick = { vm.find(vm.findQuery.orEmpty(), backwards = true) }) { Icon(Icons.Default.KeyboardArrowUp, "Previous", tint = onSurface) }
-    IconButton(onClick = { vm.find(vm.findQuery.orEmpty()) }) { Icon(Icons.Default.KeyboardArrowDown, "Next", tint = onSurface) }
-    IconButton(onClick = vm::endFind) { Icon(zenIcon("close"), "Close find", Modifier.size(16.dp), tint = onSurface) }
+    IconButton(modifier = Modifier.pressScale(), onClick = { vm.find(vm.findQuery.orEmpty(), backwards = true) }) { Icon(Icons.Default.KeyboardArrowUp, "Previous", tint = onSurface) }
+    IconButton(modifier = Modifier.pressScale(), onClick = { vm.find(vm.findQuery.orEmpty()) }) { Icon(Icons.Default.KeyboardArrowDown, "Next", tint = onSurface) }
+    IconButton(modifier = Modifier.pressScale(), onClick = vm::endFind) { Icon(zenIcon("close"), "Close find", Modifier.size(16.dp), tint = onSurface) }
     LaunchedEffect(Unit) { focus.requestFocus() }
 }
