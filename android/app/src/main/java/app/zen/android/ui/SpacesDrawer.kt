@@ -75,6 +75,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -568,6 +569,14 @@ private fun SpacePage(
     val listState = rememberLazyListState()
     var listOrigin by remember { mutableStateOf(Offset.Zero) }
     val held = gestures.held
+    // The bottom gap is measured after the first layout; until then rows neither animate nor show, so they appear in place.
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        settled = true
+    }
+
     // Temporary tabs sit at the bottom, within thumb reach; the gap above them absorbs the spare height.
     val filler by remember {
         derivedStateOf {
@@ -586,9 +595,9 @@ private fun SpacePage(
     fun LazyItemScope.SidebarRow(row: Row) {
         val lifted = held?.key == row.key
         val modifier = Modifier
-            .animateItem()
+            .then(if (settled) Modifier.animateItem() else Modifier)
             .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
-            .graphicsLayer { alpha = if (lifted && gestures.dragging) 0.3f else 1f }
+            .graphicsLayer { alpha = if (!settled) 0f else if (lifted && gestures.dragging) 0.3f else 1f }
         when (row) {
             is ItemRow -> Box(modifier) {
                 when (val item = row.item) {

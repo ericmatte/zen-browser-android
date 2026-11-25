@@ -113,6 +113,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         private set
     var progress by mutableIntStateOf(100)
         private set
+
+    /** Between Gecko's page start and stop; progress alone can stall below 100 on pages that keep fetching. */
+    var loading by mutableStateOf(false)
+        private set
+    private val loadingTabs = mutableSetOf<String>()
     var chromeVisible by mutableStateOf(true)
         private set
     var fullScreen by mutableStateOf(false)
@@ -243,6 +248,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         recentIds.remove(tabId)
         recentIds.addFirst(tabId)
         canGoBack = backHistory[tabId] == true
+        loading = tabId in loadingTabs
         chromeVisible = true
         lastScrollY = 0
         endFind()
@@ -265,6 +271,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         url = ""
         title = ""
         canGoBack = false
+        loading = false
         progress = 100
         chromeVisible = true
         endFind()
@@ -378,8 +385,20 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         suggestions = emptyList()
     }
 
+    /** Pull-to-refresh: always reloads, even while a load is still running. */
+    fun refresh() {
+        session?.reload()
+    }
+
     fun reload() {
-        if (progress in 1..99) session?.stop() else session?.reload()
+        if (!loading) {
+            session?.reload()
+            return
+        }
+        session?.stop()
+        loadingTabs.remove(activeTab)
+        loading = false
+        progress = 100
     }
 
     fun goForward() = session?.goForward()
@@ -450,6 +469,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     private fun forget(tabId: String) {
+        loadingTabs -= tabId
         sessions.close(tabId)
         urls.remove(tabId)
         titles.remove(tabId)
@@ -773,13 +793,20 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     override fun onPageStart(tabId: String) {
+        loadingTabs += tabId
         if (tabId == activeTab) {
+            loading = true
             chromeVisible = true
             lastScrollY = 0
         }
     }
 
     override fun onPageLoaded(tabId: String) {
+        loadingTabs -= tabId
+        if (tabId == activeTab) {
+            loading = false
+            progress = 100
+        }
         if (tabId == activeTab) requestCapture()
         if (!isPrivateTab(tabId) && tabId != LOGIN_TAB && !tabId.endsWith(GLANCE_TAB)) {
             if (settings.state.value.rememberHistory) urls[tabId]?.let { visits.record(it, titles[tabId].orEmpty()) }

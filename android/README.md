@@ -58,6 +58,8 @@ The app reuses desktop code or ports it closely:
   Google shows its own dark theme. Entering private mode with no tab opens the
   search; otherwise the private sidebar lets you pick. Launcher shortcut
   "New private tab".
+- Pull a page down from its top to reload (only where Gecko allows overscroll,
+  like Firefox for Android).
 - Glance, link menu, find in page, desktop site, downloads, file uploads,
   site permissions, full-screen video, default-browser setting.
 

@@ -110,7 +110,7 @@ import app.zen.android.sync.TabItem
 import kotlin.math.abs
 
 /** Height of the bar while typing: a little taller than at rest, like desktop's open urlbar. */
-val EditBarHeight = 58.dp
+val EditBarHeight = 64.dp
 
 /** At rest the bar leaves this share of the screen width free on each side. */
 const val BarSideInset = 0.05f
@@ -321,13 +321,6 @@ private fun AddressBar(
                 }
                 MenuButton(menu)
             }
-        }
-        if (vm.progress in 1..99) {
-            val progress by animateFloatAsState(vm.progress / 100f, label = "progress")
-            Box(
-                Modifier.align(Alignment.BottomStart).padding(horizontal = 18.dp).fillMaxWidth(progress).height(2.dp)
-                    .clip(RoundedCornerShape(1.dp)).background(accent),
-            )
         }
     }
 }
@@ -719,7 +712,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     Nav("back", "Back") { vm.goBack() }
                     Nav("forward", "Forward") { vm.goForward() }
-                    Nav(if (vm.progress in 1..99) "close" else "reload", "Reload") { vm.reload() }
+                    Nav(if (vm.loading) "close" else "reload", if (vm.loading) "Stop" else "Reload") { vm.reload() }
                     Nav("share", "Share") { share(context, vm.url) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))

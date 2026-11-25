@@ -83,6 +83,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zen.android.browser.EmptySelection
 import app.zen.android.browser.PageColor
+import app.zen.android.browser.PullAwareGeckoView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -462,7 +463,7 @@ private fun SystemBars(lightIcons: Boolean, hidden: Boolean) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Boolean, modifier: Modifier) {
-    var geckoView by remember { mutableStateOf<GeckoView?>(null) }
+    var geckoView by remember { mutableStateOf<PullAwareGeckoView?>(null) }
     val background = MaterialTheme.colorScheme.background
     val density = LocalDensity.current
     val navBar = WindowInsets.navigationBars.getBottom(density)
@@ -471,32 +472,36 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Bool
     val keyboard = WindowInsets.isImeVisible
     val shown by animateFloatAsState(if (vm.chromeVisible && !vm.fullScreen && !keyboard) 1f else 0f, tween(220), label = "chrome")
 
-    AndroidView(
-        modifier = modifier,
-        factory = { context ->
-            GeckoView(context).apply {
-                // Lets Android autofill services (1Password, Bitwarden, Google…) read and fill login forms.
-                setAutofillEnabled(true)
-                importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
-                coverUntilFirstPaint(background.toArgbInt())
-                geckoView = this
-            }
-        },
-        update = { view ->
-            val session = vm.session
-            if (session != null && view.session !== session) {
-                view.coverUntilFirstPaint(background.toArgbInt())
-                view.releaseSession()
-                view.setSession(session)
-            } else if (session == null && view.session != null) {
-                view.releaseSession()
-            }
-            // Gecko lays the page out above the bar, so short pages are never hidden behind it.
-            view.setDynamicToolbarMaxHeight(if (vm.fullScreen) 0 else barSpace)
-            // Gecko already lifts fixed elements by the max height; clipping only gives that space back while the bar hides.
-            view.setVerticalClipping(-((1f - shown) * barSpace).toInt())
-        },
-    )
+    val pull = remember { PullState() }
+    Box(modifier.pullToRefresh(pull, { !vm.fullScreen && geckoView?.canPull == true }, vm::refresh)) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                PullAwareGeckoView(context).apply {
+                    // Lets Android autofill services (1Password, Bitwarden, Google…) read and fill login forms.
+                    setAutofillEnabled(true)
+                    importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
+                    coverUntilFirstPaint(background.toArgbInt())
+                    geckoView = this
+                }
+            },
+            update = { view ->
+                val session = vm.session
+                if (session != null && view.session !== session) {
+                    view.coverUntilFirstPaint(background.toArgbInt())
+                    view.releaseSession()
+                    view.setSession(session)
+                } else if (session == null && view.session != null) {
+                    view.releaseSession()
+                }
+                // Gecko lays the page out above the bar, so short pages are never hidden behind it.
+                view.setDynamicToolbarMaxHeight(if (vm.fullScreen) 0 else barSpace)
+                // Gecko already lifts fixed elements by the max height; clipping only gives that space back while the bar hides.
+                view.setVerticalClipping(-((1f - shown) * barSpace).toInt())
+            },
+        )
+        PullIndicator(pull, vm.loading, Modifier.align(Alignment.TopCenter))
+    }
 
     LaunchedEffect(vm.captureRequest, sampleColor) {
         val view = geckoView ?: return@LaunchedEffect

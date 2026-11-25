@@ -75,7 +75,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     fun set(change: (Preferences) -> Preferences) = vm.settings.update(change)
 
-    Surface(Modifier.fillMaxSize(), color = settingsBackground()) {
+    Surface(Modifier.fillMaxSize(), color = settingsBackground(), contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.showSettings = false }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
