@@ -1,5 +1,11 @@
 package app.zen.android.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import app.zen.android.browser.NativeApp
+import app.zen.android.browser.AppLinks
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -631,6 +637,12 @@ fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     }
 }
 
+@Composable
+private fun AppIcon(app: NativeApp) {
+    val bitmap = remember(app.packageName) { app.icon?.toBitmap(64, 64)?.asImageBitmap() }
+    if (bitmap != null) androidx.compose.foundation.Image(bitmap, null, Modifier.size(20.dp))
+}
+
 private val MenuButtonSize = 48.dp
 
 /** The landscape strip's "⋯" centre, above the menu's bottom (strip padding 4dp + half a button, minus the menu's 8dp lift). */
@@ -713,6 +725,10 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
         )
     }
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+    var nativeApp by remember { mutableStateOf<NativeApp?>(null) }
+    LaunchedEffect(menu.open, vm.url) {
+        if (menu.open) nativeApp = withContext(Dispatchers.Default) { if (vm.hasPage) AppLinks.find(context, vm.url) else null }
+    }
     val bubble = if (landscape) BubbleShape(TailSide.Start, MenuTailFromBottom) else BubbleShape(TailSide.Bottom, MenuButtonSize / 2)
     AnimatedVisibility(
         menu.open,
@@ -759,7 +775,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
-                fun Item(label: String, icon: String, action: () -> Unit) {
+                fun Item(label: String, icon: String, leading: (@Composable () -> Unit)? = null, action: () -> Unit) {
                     val run = {
                         close()
                         action()
@@ -773,8 +789,13 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                             .padding(horizontal = 18.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(zenIcon(icon), null, Modifier.size(18.dp))
+                        if (leading != null) Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { leading() } else Icon(zenIcon(icon), null, Modifier.size(18.dp))
                         Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+                nativeApp?.let { app ->
+                    Item("Open in ${app.label}", "", leading = { AppIcon(app) }) {
+                        if (!AppLinks.open(context, vm.url, app)) vm.message = "${app.label} could not open this page"
                     }
                 }
                 Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
