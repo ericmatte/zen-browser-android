@@ -76,6 +76,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
     BackHandler { vm.showSettings = false }
     val prefs by vm.settings.state.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
+    val lastSync by vm.lastSync.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
     fun set(change: (Preferences) -> Preferences) = vm.settings.update(change)
 
@@ -90,7 +91,10 @@ private fun SettingsContent(vm: BrowserViewModel) {
                     val signedIn = status != SyncStatus.SignedOut
                     val subtitle = when (val s = status) {
                         SyncStatus.SignedOut -> "Sign in to sync your spaces, pinned tabs and folders with Zen desktop"
-                        SyncStatus.Idle -> "Spaces are in sync"
+                        SyncStatus.Idle -> lastSync?.let { r ->
+                            val time = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(r.at))
+                            "Last synced at $time · ${r.received} received, ${r.sent} sent"
+                        } ?: "Spaces are in sync"
                         SyncStatus.Syncing -> "Syncing…"
                         is SyncStatus.Failed -> "Sync error: ${s.message}"
                     }

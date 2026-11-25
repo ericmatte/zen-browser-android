@@ -46,8 +46,10 @@ The app reuses desktop code or ports it closely:
 - Essentials are local to the phone (never synced) and hold up to 12 tabs.
 - Unpinned tabs opened on the phone close after a chosen idle time. Tabs
   opened on desktop are never closed from the phone.
-- Sync runs on its own: at launch, on resume, after each change and every
-  5 minutes.
+- Sync runs on its own: at launch, on resume, when the sidebar opens, after
+  each change and every 5 minutes. Pull the sidebar list down to sync now.
+  Settings → Account shows when the last sync ran and how many records it
+  received and sent.
 - Address bar: 90% wide, shows the favicon (green/red lock) and title on the
   left; its buttons dip when pressed, and holding "+" names it. Tap it
   for the URL and a copy-link button, docked above the keyboard. Swipe it to

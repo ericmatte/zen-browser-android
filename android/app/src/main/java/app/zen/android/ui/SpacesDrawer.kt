@@ -1,5 +1,6 @@
 package app.zen.android.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -662,6 +663,11 @@ private fun SpacePage(
         }
     }
 
+    // Pulling the list down from its top asks the server for desktop's latest changes right away.
+    val pull = remember { PullState() }
+    val syncing = vm.status.collectAsStateWithLifecycle().value == SyncStatus.Syncing
+    val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
+    Box(Modifier.fillMaxSize().pullToRefresh(pull, { atTop && gestures.held == null }, { vm.syncNow() })) {
     LazyColumn(
         state = listState,
         modifier = Modifier
@@ -732,6 +738,8 @@ private fun SpacePage(
         items(rows.take(divider), key = { it.key }) { row -> SidebarRow(row) }
         item(key = FILLER_KEY) { Spacer(Modifier.height(with(LocalDensity.current) { filler.toDp() })) }
         items(rows.drop(divider), key = { it.key }) { row -> SidebarRow(row) }
+    }
+    PullIndicator(pull, syncing, Modifier.align(Alignment.TopCenter))
     }
 }
 

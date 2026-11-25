@@ -72,6 +72,10 @@ class SpacesRepository(
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.SignedOut)
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
 
+    /** When the last sync finished, and how many records it brought in: tells "desktop has not sent it yet" from "the phone missed it". */
+    private val _lastSync = MutableStateFlow<SyncReport?>(null)
+    val lastSync: StateFlow<SyncReport?> = _lastSync.asStateFlow()
+
     suspend fun load() = withContext(Dispatchers.IO) {
         mutex.withLock {
             runCatching {
@@ -140,6 +144,7 @@ class SpacesRepository(
                 pending.clear()
                 publish()
                 persist()
+                _lastSync.value = SyncReport(System.currentTimeMillis(), incoming.size, changes.size)
                 _status.value = SyncStatus.Idle
             } catch (e: Exception) {
                 _status.value = SyncStatus.Failed(e.message ?: e.javaClass.simpleName)
@@ -164,3 +169,5 @@ class SpacesRepository(
 
     private fun tombstone(id: String) = JSONObject().put("id", id).put("deleted", true)
 }
+
+class SyncReport(val at: Long, val received: Int, val sent: Int)

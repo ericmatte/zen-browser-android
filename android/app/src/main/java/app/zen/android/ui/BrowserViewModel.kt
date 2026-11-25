@@ -108,6 +108,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         private set
     var showLibrary by mutableStateOf(false)
     val status: StateFlow<SyncStatus> = repository.status
+    val lastSync = repository.lastSync
 
     var ready by mutableStateOf(false)
         private set
