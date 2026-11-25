@@ -31,7 +31,9 @@ The app reuses desktop code or ports it closely:
   typing, open tabs, history and suggestions, best match nearest the bar.
   Swipe a suggestion left to uncover a remove button; removed entries never
   come back. Back on a page with no history shows this search (without the
-  keyboard); back again leaves the app.
+  keyboard); back again leaves the app. Leaving the search with nothing open
+  returns to the tab used last (even after a restart), else the first
+  temporary tab.
 - Sidebar: spaces (swipe between them, colours blend with the finger), pinned
   tabs, folders, the "Clear" separator, temporary tabs at the bottom with
   "New Tab" last, space switcher (hold a space for its menu). History opens
@@ -67,7 +69,8 @@ The app reuses desktop code or ports it closely:
   Updates adds Zen to [Obtainium](https://github.com/ImranR98/Obtainium) (or
   copies the repository URL for it). The app also asks GitHub twice a day and
   puts a yellow dot on the ⋯ button and its Settings entry when a newer
-  version is out (Settings → Updates to turn it off).
+  version is out (Settings → Updates to turn it off). Hold the app icon for an
+  "Updates" shortcut that opens Obtainium.
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
   also works. Each entry the finger reaches ticks the vibration motor
   (Settings → Haptic feedback, on by default).

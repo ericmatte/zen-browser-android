@@ -191,8 +191,8 @@ private fun SettingsContent(vm: BrowserViewModel) {
                             Spacer(Modifier.width(10.dp))
                             SettingRow("Zen ${update.version} is available", "You have ${BuildConfig.VERSION_NAME}")
                         }
-                        ActionRow(if (obtainiumInstalled(context)) "Update with Obtainium" else "Open the release page") {
-                            if (!openObtainium(context)) {
+                        ActionRow(if (Updates.obtainiumInstalled(context)) "Update with Obtainium" else "Open the release page") {
+                            if (!Updates.openObtainium(context)) {
                                 vm.showSettings = false
                                 vm.newTab(update.pageUrl)
                             }
@@ -316,15 +316,6 @@ private fun CopyRow(title: String, value: String, onCopy: () -> Unit) {
         }
         Icon(zenIcon("edit-copy"), "Copy", Modifier.padding(horizontal = 8.dp).size(18.dp))
     }
-}
-
-private fun obtainiumInstalled(context: Context): Boolean =
-    Updates.OBTAINIUM_PACKAGES.any { context.packageManager.getLaunchIntentForPackage(it) != null }
-
-private fun openObtainium(context: Context): Boolean {
-    val launch = Updates.OBTAINIUM_PACKAGES.firstNotNullOfOrNull { context.packageManager.getLaunchIntentForPackage(it) } ?: return false
-    context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    return true
 }
 
 private fun openLink(context: Context, link: String): Boolean = try {

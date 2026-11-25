@@ -2,4 +2,6 @@
 <resources>
     <string name="shortcut_private_short">Private tab</string>
     <string name="shortcut_private_long">New private tab</string>
+    <string name="shortcut_updates_short">Updates</string>
+    <string name="shortcut_updates_long">Check for updates</string>
 </resources>

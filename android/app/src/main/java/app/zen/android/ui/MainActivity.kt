@@ -1,5 +1,6 @@
 package app.zen.android.ui
 
+import app.zen.android.browser.Updates
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -75,6 +76,11 @@ class MainActivity : ComponentActivity(), ActivityBridge {
             vm.requestPrivateBrowsing()
             return
         }
+        // Obtainium does the updating; without it, Settings → Updates explains how to set it up.
+        if (intent?.action == ACTION_UPDATES) {
+            if (!Updates.openObtainium(this)) vm.showSettings = true
+            return
+        }
         val text = when (intent?.action) {
             Intent.ACTION_VIEW -> intent.dataString
             Intent.ACTION_WEB_SEARCH -> intent.getStringExtra("query")
@@ -107,3 +113,4 @@ class MainActivity : ComponentActivity(), ActivityBridge {
 }
 
 const val ACTION_NEW_PRIVATE_TAB = "app.zen.android.action.NEW_PRIVATE_TAB"
+const val ACTION_UPDATES = "app.zen.android.action.UPDATES"

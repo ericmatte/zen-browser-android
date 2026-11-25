@@ -487,8 +487,8 @@ val SecureGreen = Color(0xFF2EB872)
 private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false) {
     val web = url.startsWith("http")
     val safe = !web || secure
-    Box(modifier.size(24.dp)) {
-        Favicon(url, null, 20.dp, loading = loading, spinning = spinning)
+    Box(modifier.size(22.dp), contentAlignment = Alignment.Center) {
+        Favicon(url, null, BarIconSize, loading = loading, spinning = spinning)
         if (web) {
             Box(
                 Modifier
@@ -643,8 +643,11 @@ private fun AppIcon(app: NativeApp) {
     if (bitmap != null) androidx.compose.foundation.Image(bitmap, null, Modifier.size(20.dp))
 }
 
+/** The bar's glyphs and the page favicon share one size, so the row reads evenly. */
+val BarIconSize = 18.dp
+
 /** Bar buttons keep a 48dp-tall touch target but sit closer together than Material's 48dp squares. */
-private val BarButtonWidth = 42.dp
+private val BarButtonWidth = 46.dp
 
 /** The landscape strip's "⋯" centre, above the menu's bottom (strip padding 4dp + half a button, minus the menu's 8dp lift). */
 private val MenuTailFromBottom = 20.dp

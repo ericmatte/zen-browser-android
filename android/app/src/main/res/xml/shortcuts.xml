@@ -11,4 +11,15 @@
             android:targetPackage="app.zen.android"
             android:targetClass="app.zen.android.ui.MainActivity" />
     </shortcut>
+    <shortcut
+        android:shortcutId="updates"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_updates"
+        android:shortcutShortLabel="@string/shortcut_updates_short"
+        android:shortcutLongLabel="@string/shortcut_updates_long">
+        <intent
+            android:action="app.zen.android.action.UPDATES"
+            android:targetPackage="app.zen.android"
+            android:targetClass="app.zen.android.ui.MainActivity" />
+    </shortcut>
 </shortcuts>

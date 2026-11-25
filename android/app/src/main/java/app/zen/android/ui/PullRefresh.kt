@@ -118,13 +118,18 @@ fun PullIndicator(state: PullState, loading: Boolean, modifier: Modifier) {
             alpha = progress
             scaleX = 0.6f + 0.4f * progress
             scaleY = 0.6f + 0.4f * progress
-            rotationZ = if (state.refreshing) turn else state.offset.value / state.trigger * 540f
         },
         contentAlignment = Alignment.Center,
     ) {
         Surface(Modifier.size(40.dp), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(zenIcon("reload"), "Reload", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+                // Only the arrow turns: spinning the whole disc dragged its shadow around with it.
+                Icon(
+                    zenIcon("reload"),
+                    "Reload",
+                    Modifier.size(18.dp).graphicsLayer { rotationZ = if (state.refreshing) turn else state.offset.value / state.trigger * 540f },
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
             }
         }
     }

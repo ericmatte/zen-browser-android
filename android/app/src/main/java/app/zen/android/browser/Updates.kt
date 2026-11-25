@@ -1,5 +1,7 @@
 package app.zen.android.browser
 
+import android.content.Context
+import android.content.Intent
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONObject
@@ -21,6 +23,15 @@ object Updates {
     const val OBTAINIUM_ADD = "obtainium://add/$REPO_URL"
     val OBTAINIUM_PACKAGES = listOf("dev.imranr.obtainium", "dev.imranr.obtainium.fdroid")
     const val OBTAINIUM_DOWNLOAD = "https://github.com/ImranR98/Obtainium/releases/latest"
+
+    fun obtainiumInstalled(context: Context): Boolean =
+        OBTAINIUM_PACKAGES.any { context.packageManager.getLaunchIntentForPackage(it) != null }
+
+    fun openObtainium(context: Context): Boolean {
+        val launch = OBTAINIUM_PACKAGES.firstNotNullOfOrNull { context.packageManager.getLaunchIntentForPackage(it) } ?: return false
+        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return true
+    }
 
     fun versionOf(tag: String): String? = tag.removePrefix(TAG_PREFIX).takeIf { tag.startsWith(TAG_PREFIX) && parts(it) != null }
 

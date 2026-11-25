@@ -180,7 +180,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private var pendingLogin: PendingLogin? = null
     private var syncLoop: Job? = null
     private var lastNormalTab: TabItem? = null
-    private val recentIds = ArrayDeque<String>()
+    // Kept across launches, so leaving the launch search returns to the tab used last.
+    private val recentIds = ArrayDeque(settings.string("recentTabs")?.split(',')?.filter { it.isNotEmpty() }.orEmpty())
 
     private val home get() = settings.state.value.searchEngine.home
 
@@ -300,6 +301,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         title = titles[tabId] ?: knownTab(tabId)?.title ?: UrlInput.display(url)
         recentIds.remove(tabId)
         recentIds.addFirst(tabId)
+        if (!isPrivateTab(tabId)) settings.putString("recentTabs", recentIds.filter { !isPrivateTab(it) }.take(20).joinToString(","))
         canGoBack = backHistory[tabId] == true
         canGoForward = forwardHistory[tabId] == true
         reloading = false
@@ -402,8 +404,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun showFallback() {
-        val spaceTabs = space(activeSpace)?.tabs.orEmpty()
-        when (val next = EmptySelection.afterSearch(privateMode, privateTabs.map { it.id }, spaceTabs.map { it.id })) {
+        val current = space(activeSpace)
+        val spaceTabs = current?.tabs.orEmpty()
+        val recent = recentTabs(1).map { it.id }
+        val temporary = current?.regularTabs.orEmpty().map { it.id }
+        when (val next = EmptySelection.afterSearch(privateMode, privateTabs.map { it.id }, spaceTabs.map { it.id }, recent, temporary)) {
             is Dismissal.Select -> knownTab(next.tabId)?.let(::selectTab)
             Dismissal.LeavePrivate -> togglePrivateMode()
             Dismissal.Blank -> selectTab(SCRATCH_TAB, home)
