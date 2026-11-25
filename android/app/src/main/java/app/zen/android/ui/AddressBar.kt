@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -198,7 +199,8 @@ fun BottomChrome(
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
             ) {
-                SuggestionsPanel(vm, inNewTab = searching) { onEditingChange(false) }
+                // Same width as the bar under it, whether that bar floats or is docked.
+                SuggestionsPanel(vm, inNewTab = searching, Modifier.fillMaxWidth(1f - 2 * BarSideInset * (1f - (if (landscape) 1f else dock)))) { onEditingChange(false) }
             }
             AnimatedVisibility(
                 visible = active || (!landscape && vm.chromeVisible && !webKeyboard),
@@ -265,7 +267,7 @@ private fun AddressBar(
                 }
                 LaunchedEffect(searching) {
                     field = if (searching) TextFieldValue("") else TextFieldValue(vm.url, TextRange(0, vm.url.length))
-                    focus.requestFocus()
+                    if (!vm.launcherFromBack) focus.requestFocus()
                 }
                 BasicTextField(
                     value = field,
@@ -281,7 +283,7 @@ private fun AddressBar(
                         if (searching) vm.launch(field.text) else vm.navigate(field.text)
                         done()
                     }),
-                    modifier = Modifier.weight(1f).focusRequester(focus),
+                    modifier = Modifier.weight(1f).focusRequester(focus).onFocusChanged { if (it.isFocused) vm.searchFieldFocused() },
                     decorationBox = { inner ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (field.text.isEmpty()) Text(if (searching) "Search…" else "Search or enter address", color = onSurface.copy(alpha = 0.5f))
@@ -758,20 +760,31 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
 }
 
 @Composable
-private fun SuggestionsPanel(vm: BrowserViewModel, inNewTab: Boolean, onDone: () -> Unit) {
+private fun SuggestionsPanel(vm: BrowserViewModel, inNewTab: Boolean, modifier: Modifier, onDone: () -> Unit) {
     Surface(
-        Modifier.fillMaxWidth(),
+        modifier,
         shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
         color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
         contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
         shadowElevation = 12.dp,
     ) {
         // Best match sits at the bottom, right above the bar and the thumb.
-        Column(Modifier.padding(vertical = 6.dp)) {
+        val reveal = remember { RevealGroup() }
+        Column(Modifier.closesReveal(reveal).padding(vertical = 6.dp)) {
             vm.suggestions.asReversed().forEach { suggestion ->
-                SuggestionRow(suggestion) {
-                    vm.pick(suggestion, inNewTab)
-                    onDone()
+                key(suggestion.dismissKey) {
+                    SwipeRow(
+                        key = suggestion.dismissKey,
+                        group = reveal,
+                        reveal = SwipeAction("trash", "Remove suggestion", DestructiveRed) { vm.dismissSuggestion(suggestion) },
+                        commitStart = null,
+                        commitEnd = null,
+                    ) {
+                        SuggestionRow(suggestion) {
+                            vm.pick(suggestion, inNewTab)
+                            onDone()
+                        }
+                    }
                 }
             }
         }

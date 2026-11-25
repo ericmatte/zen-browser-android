@@ -29,6 +29,9 @@ The app reuses desktop code or ports it closely:
 - Home: at launch nothing loads; the bottom bar morphs into the search, docked
   above the keyboard. Before typing it lists recent searches and pages; while
   typing, open tabs, history and suggestions, best match nearest the bar.
+  Swipe a suggestion left to uncover a remove button; removed entries never
+  come back. Back on a page with no history shows this search (without the
+  keyboard); back again leaves the app.
 - Sidebar: spaces (swipe between them, colours blend with the finger), pinned
   tabs, folders, the "Clear" separator, temporary tabs at the bottom with
   "New Tab" last, space switcher (hold a space for its menu). History opens

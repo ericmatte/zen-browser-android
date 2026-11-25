@@ -86,7 +86,6 @@ import app.zen.android.browser.PullAwareGeckoView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.mozilla.geckoview.GeckoView
 import kotlin.math.abs
 
 val PrivateTint = Color(0xFF17171A)
@@ -120,10 +119,11 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     LaunchedEffect(drawerOnRight) { if (!drawer.isOpen) drawer.snapSide(drawerOnRight) }
 
     // Only claim "back" when the page has history, so Android 14's predictive back-to-home still plays otherwise.
+    BackHandler(!vm.canGoBack && vm.hasPage && !vm.launcherOpen) { vm.openHomeFromBack() }
     BackHandler(vm.canGoBack) { vm.goBack() }
     BackHandler(drawer.isOpen) { drawer.close() }
     BackHandler(editing) { editing = false }
-    BackHandler(vm.launcherOpen) { vm.closeLauncher() }
+    BackHandler(vm.launcherOpen && !vm.launcherFromBack) { vm.closeLauncher() }
     BackHandler(vm.findQuery != null) { vm.endFind() }
     BackHandler(vm.fullScreen) { vm.exitFullScreen() }
 

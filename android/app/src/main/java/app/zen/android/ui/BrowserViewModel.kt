@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.zen.android.browser.Dismissal
+import app.zen.android.browser.DismissedSuggestions
 import app.zen.android.browser.EmptySelection
 import app.zen.android.browser.FullScreenGate
 import app.zen.android.browser.Gecko
@@ -76,6 +77,14 @@ sealed interface Suggestion {
     data class Search(val text: String, val recent: Boolean = false) : Suggestion
     data class Visited(val visit: Visit) : Suggestion
 }
+
+/** Identifies a suggestion across lists, so a swiped-away one stays away. */
+val Suggestion.dismissKey: String
+    get() = when (this) {
+        is Suggestion.OpenTab -> "tab:" + tab.url
+        is Suggestion.Search -> "search:" + text.trim().lowercase()
+        is Suggestion.Visited -> "page:" + visit.url
+    }
 
 class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
@@ -301,7 +310,24 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun openLauncher() {
         clearSuggestions()
         launcherOpen = true
+        launcherFromBack = false
         suggest("")
+    }
+
+    /**
+     * Back pressed on a page with no history: the home search shows instead of the app closing. It opens
+     * without the keyboard and lets the next back leave the app, so back never loops between page and search.
+     */
+    var launcherFromBack by mutableStateOf(false)
+        private set
+
+    fun openHomeFromBack() {
+        openLauncher()
+        launcherFromBack = true
+    }
+
+    fun searchFieldFocused() {
+        launcherFromBack = false
     }
 
     private var recentSearches = RecentSearches.decode(settings.string("recentSearches"))
@@ -327,13 +353,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         } else {
             emptyList()
         }
-        return searches + pages
+        return DismissedSuggestions.without(searches + pages, dismissed) { it.dismissKey }
     }
 
     fun closeLauncher() {
         if (!launcherOpen) return
         clearSuggestions()
         launcherOpen = false
+        launcherFromBack = false
         if (!hasPage) showFallback()
     }
 
@@ -662,7 +689,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             .map { Suggestion.OpenTab(it) }
         val openUrls = openTabs.map { it.tab.url }.toSet()
         val visited = if (privateMode || !prefs.historyInSuggestions) emptyList() else visits.search(query, 4).filter { it.url !in openUrls }.map { Suggestion.Visited(it) }
-        suggestions = openTabs + visited
+        suggestions = DismissedSuggestions.without(openTabs + visited, dismissed) { it.dismissKey }
         if (!prefs.searchSuggestions || (privateMode && !prefs.suggestionsInPrivate)) return
         suggestJob = viewModelScope.launch {
             delay(120)
@@ -678,8 +705,22 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                     }
                 }.getOrDefault(emptyList())
             }
-            suggestions = openTabs + visited + remote.map { Suggestion.Search(it) }
+            suggestions = DismissedSuggestions.without(openTabs + visited + remote.map { Suggestion.Search(it) }, dismissed) { it.dismissKey }
         }
+    }
+
+    private var dismissed = RecentSearches.decode(settings.string("dismissedSuggestions"))
+
+    /** Swiped away in the search: a recent search is forgotten, anything else is never suggested again. */
+    fun dismissSuggestion(suggestion: Suggestion) {
+        if (suggestion is Suggestion.Search && suggestion.recent) {
+            recentSearches = recentSearches.filterNot { it.equals(suggestion.text, ignoreCase = true) }
+            settings.putString("recentSearches", RecentSearches.encode(recentSearches))
+        } else {
+            dismissed = DismissedSuggestions.add(dismissed, suggestion.dismissKey)
+            settings.putString("dismissedSuggestions", RecentSearches.encode(dismissed))
+        }
+        suggestions = suggestions - suggestion
     }
 
     fun clearSuggestions() {

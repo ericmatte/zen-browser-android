@@ -11,12 +11,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -51,7 +45,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -60,7 +53,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -199,18 +191,13 @@ fun SpacesSidebar(
             }
             .pointerInput(Unit) {
                 // A touch anywhere but the space name being edited ends the rename, like clicking away on desktop.
-                // A touch anywhere but an uncovered archive button slides that tab back, and does nothing else.
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                    val point = origin + down.position
                     val title = gestures.editingTitle
-                    if (title != null && !title.contains(point)) focusManager.clearFocus()
-                    if (gestures.revealedTab != null && !gestures.archiveRect.contains(point)) {
-                        gestures.revealedTab = null
-                        down.consume()
-                    }
+                    if (title != null && !title.contains(origin + down.position)) focusManager.clearFocus()
                 }
-            },
+            }
+            .closesReveal(gestures.reveal),
     ) {
         Box(Modifier.matchParentSize().zenSpaceBackground(specFrom))
         if (t > 0.001f && to != from) Box(Modifier.matchParentSize().graphicsLayer { alpha = t }.zenSpaceBackground(specTo))
@@ -320,8 +307,7 @@ class SidebarGestures {
         private set
     var dropLine by mutableStateOf<Float?>(null)
     var renameSpace by mutableStateOf<String?>(null)
-    var revealedTab by mutableStateOf<String?>(null)
-    var archiveRect = Rect.Zero
+    val reveal = RevealGroup()
     var editingTitle: Rect? = null
     var overEssentials by mutableStateOf(false)
     var essentialsRect = Rect.Zero
@@ -826,117 +812,29 @@ private fun FolderEntry(
 
 /**
  * Left-to-right pins a temporary tab or unpins a pinned one. Right-to-left
- * unpins a pinned tab; on a temporary tab it uncovers an archive button that
- * stays until tapped (archives the tab) or until a touch lands elsewhere.
+ * unpins a pinned tab; on a temporary tab it uncovers desktop's archive button.
  */
 @Composable
 private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, depth: Int, gestures: SidebarGestures, onOpen: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val density = LocalDensity.current
-    val reveal = with(density) { ArchiveButtonWidth.toPx() }
-    val offset = remember(tab.id, tab.pinned) { Animatable(0f) }
-    var width by remember { mutableIntStateOf(1) }
     val accent = MaterialTheme.colorScheme.primary
-    val settle = spring<Float>(dampingRatio = 0.85f, stiffness = 500f)
-
-    LaunchedEffect(gestures.revealedTab) {
-        if (gestures.revealedTab != tab.id && offset.targetValue != 0f) offset.animateTo(0f, settle)
-    }
-
-    Box(
-        Modifier
-            .onGloballyPositioned { gestures.hitRects[tab.id] = it.boundsInRoot() to HeldTab(tab, spaceUuid, it.boundsInRoot()) }
-            .onSizeChanged { width = it.width.coerceAtLeast(1) }
-            .draggable(
-                orientation = Orientation.Horizontal,
-                state = rememberDraggableState { dx ->
-                    scope.launch { offset.snapTo((offset.value + dx).coerceIn(-width.toFloat(), width.toFloat())) }
-                },
-                onDragStopped = { velocity ->
-                    val threshold = width * 0.35f
-                    val value = offset.value
-                    when {
-                        value > threshold || (value > 0f && velocity > 1500f) -> {
-                            vm.setPinned(tab, !tab.pinned)
-                            offset.animateTo(0f, settle)
-                        }
-                        value < 0f && tab.pinned && (value < -threshold || velocity < -1500f) -> {
-                            vm.setPinned(tab, false)
-                            offset.animateTo(0f, settle)
-                        }
-                        value < -reveal / 2 && !tab.pinned -> {
-                            gestures.revealedTab = tab.id
-                            offset.animateTo(-reveal, settle)
-                        }
-                        else -> {
-                            if (gestures.revealedTab == tab.id) gestures.revealedTab = null
-                            offset.animateTo(0f, settle)
-                        }
-                    }
-                },
-            ),
+    SwipeRow(
+        key = tab.id,
+        group = gestures.reveal,
+        reveal = if (tab.pinned) null else SwipeAction("archive", "Archive tab", DestructiveRed) { vm.closeTab(tab.id) },
+        commitStart = SwipeAction(if (tab.pinned) "unpin" else "pin", if (tab.pinned) "Unpin" else "Pin", accent) { vm.setPinned(tab, !tab.pinned) },
+        commitEnd = if (tab.pinned) SwipeAction("unpin", "Unpin", accent) { vm.setPinned(tab, false) } else null,
+        modifier = Modifier.onGloballyPositioned { gestures.hitRects[tab.id] = it.boundsInRoot() to HeldTab(tab, spaceUuid, it.boundsInRoot()) },
     ) {
-        val value = offset.value
-        if (value != 0f) {
-            val toEnd = value < 0f
-            val archives = toEnd && !tab.pinned
-            val icon = when {
-                archives -> "archive"
-                tab.pinned -> "unpin"
-                else -> "pin"
-            }
-            val progress = (kotlin.math.abs(value) / (width * 0.35f)).coerceIn(0f, 1f)
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .clip(RoundedCornerShape(10.dp))
-                    .background((if (archives) DestructiveRed else accent).copy(alpha = 0.35f + 0.55f * progress)),
-                contentAlignment = if (toEnd) Alignment.CenterEnd else Alignment.CenterStart,
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .width(ArchiveButtonWidth)
-                        .then(
-                            if (archives) {
-                                Modifier
-                                    .onGloballyPositioned { gestures.archiveRect = it.boundsInRoot() }
-                                    .clickable {
-                                        gestures.revealedTab = null
-                                        vm.closeTab(tab.id)
-                                    }
-                            } else {
-                                Modifier
-                            },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(zenIcon(icon), if (archives) "Archive tab" else null, Modifier.size(18.dp), tint = Color.White)
-                }
-            }
-        }
-        Box(Modifier.offset { IntOffset(value.roundToInt(), 0) }) {
-            TabRow(tab, depth, tab.id == vm.activeTab, opaque = value != 0f) {
-                vm.selectTab(tab)
-                onOpen()
-            }
+        TabRow(tab, depth, tab.id == vm.activeTab) {
+            vm.selectTab(tab)
+            onOpen()
         }
     }
 }
 
-private val ArchiveButtonWidth = 72.dp
-
 @Composable
-private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, opaque: Boolean, onClick: () -> Unit) {
-    val backdrop = LocalRowBackdrop.current
-    val selectedBg = selectedTabBackground()
-    // While sliding, the row is solid so the action colour never shows through it.
-    val background = when {
-        opaque && selected -> selectedBg.over(backdrop)
-        opaque -> backdrop
-        selected -> selectedBg
-        else -> Color.Transparent
-    }
+private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, onClick: () -> Unit) {
+    val background = if (selected) selectedTabBackground() else Color.Transparent
     Row(
         Modifier
             .fillMaxWidth()
