@@ -3,6 +3,11 @@ package app.zen.android.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import app.zen.android.browser.DragGap
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -306,7 +311,6 @@ class SidebarGestures {
         private set
     var grab = Offset.Zero
         private set
-    var dropLine by mutableStateOf<Float?>(null)
     var renameSpace by mutableStateOf<String?>(null)
     val reveal = RevealGroup()
     var editingTitle: Rect? = null
@@ -374,7 +378,6 @@ class SidebarGestures {
         menuOpen = false
         dragging = false
         select.reset()
-        dropLine = null
         overEssentials = false
     }
 }
@@ -520,8 +523,11 @@ private fun itemOf(held: Held): SidebarItem = when (held) {
     is HeldEssential -> held.tab
 }
 
-/** Where a dragged row would land: the edit to send, and the line to draw (root y). */
-private fun dropTarget(space: Space, rows: List<Row>, gestures: SidebarGestures, held: Held, y: Float): Pair<LocalEdit.MoveItem?, Float?> {
+/** A gap opened at [target] (index among the rows without [heldKey]) for a dragged row [height] px tall. */
+private data class DropGap(val heldKey: String, val from: Int, val target: Int, val height: Float)
+
+/** Where a dragged row would land: the edit to send, and its index among the other rows. */
+private fun dropTarget(space: Space, rows: List<Row>, gestures: SidebarGestures, held: Held, y: Float): Pair<LocalEdit.MoveItem?, Int> {
     val ordered = rows.filter { it.key != held.key }
     val rects = ordered.map { gestures.rowRects[it.key] }
     var index = ordered.size
@@ -537,13 +543,12 @@ private fun dropTarget(space: Space, rows: List<Row>, gestures: SidebarGestures,
     // Folders always live in the pinned section, and "New Tab" always closes the list, under the thumb.
     if (held is HeldFolder && index > divider) index = divider
     if (index > newTab) index = newTab
-    val line = rects.getOrNull(index)?.top ?: rects.lastOrNull { it != null }?.bottom
     val moved = ordered.toMutableList().apply { add(index.coerceAtMost(size), ItemRow(itemOf(held))) }
-    if (moved.map { it.key } == rows.map { it.key }) return null to line
+    if (moved.map { it.key } == rows.map { it.key }) return null to index
     val pinned = moved.take(moved.indexOf(DividerRow)).map { it.key }
     val regular = moved.subList(moved.indexOf(DividerRow) + 1, moved.indexOf(NewTabRow)).map { it.key }
     val hiddenPinned = space.pinnedItems.map { it.id }.filter { id -> rows.none { it.key == id } }
-    return LocalEdit.placing(space.uuid, held.key, hiddenPinned + pinned, regular) to line
+    return LocalEdit.placing(space.uuid, held.key, hiddenPinned + pinned, regular) to index
 }
 
 @Composable
@@ -586,13 +591,40 @@ private fun SpacePage(
         }
     }
 
+    // Kept after the drop until the moved rows arrive from the store, so nothing jumps back meanwhile.
+    var gap by remember { mutableStateOf<DropGap?>(null) }
+    LaunchedEffect(rows) { gap = null }
+    LaunchedEffect(gap != null, gestures.dragging) {
+        if (gap != null && !gestures.dragging) {
+            delay(1200)
+            gap = null
+        }
+    }
+    // Folders resize their own item and drags shift rows by hand; a placement spring on top would make
+    // rows trail behind at their own pace, so it only plays for other changes (a tab closing, a sync).
+    var quietPlacement by remember { mutableStateOf(false) }
+    LaunchedEffect(prefs.expandedFolders, gestures.dragging, gap) {
+        quietPlacement = true
+        delay(400)
+        quietPlacement = gestures.dragging || gap != null
+    }
+
     @Composable
     fun LazyItemScope.SidebarRow(row: Row) {
-        val lifted = held?.key == row.key
+        val lifted = (held?.key == row.key && gestures.dragging) || gap?.heldKey == row.key
+        val shift = gap?.let { g ->
+            if (row.key == g.heldKey) return@let 0f
+            val index = rows.filter { it.key != g.heldKey }.indexOf(row)
+            DragGap.slots(index, g.from, g.target) * g.height
+        } ?: 0f
+        val offset by animateFloatAsState(shift, if (gap != null) spring(dampingRatio = 0.9f, stiffness = 700f) else snap(), label = "gap")
         val modifier = Modifier
-            .then(if (settled) Modifier.animateItem() else Modifier)
+            .then(if (settled) Modifier.animateItem(placementSpec = if (quietPlacement) null else spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold)) else Modifier)
             .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
-            .graphicsLayer { alpha = if (!settled) 0f else if (lifted && gestures.dragging) 0.3f else 1f }
+            .graphicsLayer {
+                translationY = offset
+                alpha = if (!settled || lifted) 0f else 1f
+            }
         when (row) {
             is ItemRow -> Box(modifier) {
                 when (val item = row.item) {
@@ -669,18 +701,20 @@ private fun SpacePage(
                             val edge = 64.dp.toPx()
                             if (point.y < rect.top + edge && point.y > rect.top) listState.dispatchRawDelta(-14f)
                             if (point.y > rect.bottom - edge) listState.dispatchRawDelta(14f)
-                            if (rect.contains(point)) {
-                                val (next, line) = dropTarget(space, rows, gestures, target, point.y)
+                            if (rect.contains(point) && !gestures.overEssentials) {
+                                val (next, index) = dropTarget(space, rows, gestures, target, point.y)
                                 edit = next
-                                gestures.dropLine = line
+                                val height = gestures.rowRects[target.key]?.takeIf { rows.any { it.key == target.key } }?.height ?: target.bounds.height
+                                gap = DropGap(target.key, rows.indexOfFirst { it.key == target.key }, index, height)
                             } else {
                                 edit = null
-                                gestures.dropLine = null
+                                gap = null
                             }
                         }
                         if (!change.pressed) break
                     }
                     val toEssentials = gestures.dragging && gestures.overEssentials
+                    if (edit == null || toEssentials) gap = null
                     val chosen = gestures.release()
                     when {
                         chosen != null -> chosen()
@@ -912,18 +946,6 @@ private fun BoxScope.HoldOverlay(gestures: SidebarGestures, origin: Offset) {
             }
             .background(selectedTabBackground().over(backdrop)),
     ) { HeldPreview(held) }
-
-    val line = gestures.dropLine
-    if (line != null && gestures.dragging && !gestures.overEssentials) {
-        Box(
-            Modifier
-                .offset { IntOffset((gestures.listRect.left - origin.x + 12.dp.toPx()).roundToInt(), (line - origin.y - 1.dp.toPx()).roundToInt()) }
-                .width(with(density) { gestures.listRect.width.toDp() } - 24.dp)
-                .height(2.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(MaterialTheme.colorScheme.primary),
-        )
-    }
 
     var menuHeight by remember { mutableIntStateOf(0) }
     val gap = with(density) { 6.dp.toPx() }
