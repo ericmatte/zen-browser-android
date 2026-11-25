@@ -709,7 +709,7 @@ private fun MenuButton(menu: BarMenuState, badge: Boolean, landscape: Boolean = 
         contentAlignment = Alignment.Center,
     ) {
         Icon(zenIcon("menu"), if (badge) "More, update available" else "More", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
-        if (badge) UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp))
+        if (badge) UpdateDot(Modifier.align(Alignment.Center).offset(x = 10.dp, y = (-7).dp))
     }
 }
 
