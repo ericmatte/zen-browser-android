@@ -25,15 +25,19 @@ The app reuses desktop code or ports it closely:
 
 ## Features
 
+- Home: desktop-style search at launch and for each new tab. Results
+  (open tabs, history, suggestions) appear only once you type.
 - Sidebar: essentials, spaces (swipe between them), pinned tabs, folders, the
   "Clear" separator, space switcher. Swipe a tab left to close it. Long-press
   and drag to reorder or to pin/unpin.
-- Glance: long-press a link, then "Glance".
-- Private tabs: never synced, kept only in memory.
-- Address bar: copy link, search suggestions, "switch to tab", swipe left or
-  right to change tab, swipe up for a new tab.
-- Find in page, desktop site, share, downloads, file uploads, site
-  permissions, full-screen video, links from other apps.
+- Address bar: shows the page title; tap it for the URL and a copy-link
+  button, docked above the keyboard. Swipe it to slide to the previous or next
+  tab, flick up for a new tab. Hold the sidebar button for recent tabs, slide
+  onto one and release to open it.
+- Private tabs: sidebar on the right, never synced, no history, dark pages
+  (Google included). Launcher shortcut "New private tab".
+- Glance, link menu, find in page, desktop site, downloads, file uploads,
+  site permissions, full-screen video, default-browser setting.
 
 ## Build
 

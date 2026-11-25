@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_private_tab"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_private"
+        android:shortcutShortLabel="@string/shortcut_private_short"
+        android:shortcutLongLabel="@string/shortcut_private_long">
+        <intent
+            android:action="app.zen.android.action.NEW_PRIVATE_TAB"
+            android:targetPackage="app.zen.android"
+            android:targetClass="app.zen.android.ui.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -1,0 +1,14 @@
+{
+  "manifest_version": 2,
+  "name": "Zen Google dark",
+  "version": "1.0",
+  "description": "Renders Google search dark when the browser prefers a dark color scheme.",
+  "browser_specific_settings": { "gecko": { "id": "google-dark@zen.android" } },
+  "content_scripts": [
+    {
+      "matches": ["*://*.google.com/*", "*://*.google.ca/*", "*://*.google.fr/*", "*://*.google.co.uk/*"],
+      "js": ["dark.js"],
+      "run_at": "document_start"
+    }
+  ]
+}

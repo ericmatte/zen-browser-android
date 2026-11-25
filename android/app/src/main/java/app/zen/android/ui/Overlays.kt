@@ -1,7 +1,14 @@
 package app.zen.android.ui
 
 import androidx.activity.compose.BackHandler
+import android.app.role.RoleManager
+import android.content.Intent
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -86,7 +93,7 @@ fun BoxScope.Overlays(vm: BrowserViewModel) {
         }
     }
 
-    vm.contextMenu?.let { ContextMenuSheet(vm, it) }
+    ContextMenuSheet(vm)
 
     AnimatedVisibility(
         vm.showSettings,
@@ -118,10 +125,13 @@ fun BoxScope.Overlays(vm: BrowserViewModel) {
 }
 
 @Composable
-fun SessionView(session: GeckoSession, modifier: Modifier) {
+fun SessionView(session: GeckoSession, modifier: Modifier, texture: Boolean = false) {
     AndroidView(
         modifier = modifier,
-        factory = { GeckoView(it) },
+        factory = { context ->
+            // A TextureView honours Compose clipping and scaling (rounded, animated cards); a SurfaceView does not.
+            GeckoView(context).apply { if (texture) setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW) }
+        },
         update = { view ->
             if (view.session !== session) {
                 view.releaseSession()
@@ -147,10 +157,11 @@ private fun GlanceOverlay(vm: BrowserViewModel, session: GeckoSession) {
         AnimatedVisibility(shown, enter = scaleIn(initialScale = 0.9f) + fadeIn(), exit = scaleOut() + fadeOut()) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 10.dp, vertical = 12.dp)) {
                 Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    GlassSurface(shape = RoundedCornerShape(18.dp)) {
+                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest, shadowElevation = 6.dp) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = vm::closeGlance) { Icon(zenIcon("close"), "Close glance", Modifier.size(16.dp)) }
-                            IconButton(onClick = vm::expandGlance) { Icon(zenIcon("arrows-expand"), "Open as tab", Modifier.size(16.dp)) }
+                            val tint = MaterialTheme.colorScheme.onSurface
+                            IconButton(onClick = vm::closeGlance) { Icon(zenIcon("close"), "Close glance", Modifier.size(18.dp), tint = tint) }
+                            IconButton(onClick = vm::expandGlance) { Icon(zenIcon("arrows-expand"), "Open as tab", Modifier.size(18.dp), tint = tint) }
                         }
                     }
                     Text(
@@ -169,7 +180,7 @@ private fun GlanceOverlay(vm: BrowserViewModel, session: GeckoSession) {
                         .clip(RoundedCornerShape(20.dp))
                         .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {},
                 ) {
-                    SessionView(session, Modifier.fillMaxSize())
+                    SessionView(session, Modifier.fillMaxSize(), texture = true)
                 }
             }
         }
@@ -177,22 +188,33 @@ private fun GlanceOverlay(vm: BrowserViewModel, session: GeckoSession) {
 }
 
 @Composable
-private fun ContextMenuSheet(vm: BrowserViewModel, element: GeckoSession.ContentDelegate.ContextElement) {
+private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel) {
     val context = LocalContext.current
+    val current = vm.contextMenu
+    var shown by remember { mutableStateOf<GeckoSession.ContentDelegate.ContextElement?>(null) }
+    if (current != null) shown = current
+    val element = shown ?: return
     val link = element.linkUri
     val media = element.srcUri
     val target = link ?: media ?: return
-    BackHandler { vm.contextMenu = null }
+    if (current != null) BackHandler { vm.contextMenu = null }
     fun act(block: () -> Unit) {
         vm.contextMenu = null
         block()
     }
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.35f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { vm.contextMenu = null },
-        contentAlignment = Alignment.BottomCenter,
+    AnimatedVisibility(current != null, enter = fadeIn(tween(180)), exit = fadeOut(tween(180))) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.35f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { vm.contextMenu = null },
+        )
+    }
+    AnimatedVisibility(
+        current != null,
+        modifier = Modifier.align(Alignment.BottomCenter),
+        enter = slideInVertically(spring(dampingRatio = 0.85f, stiffness = 500f)) { it } + fadeIn(tween(120)),
+        exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
     ) {
         Surface(
             Modifier.navigationBarsPadding().padding(12.dp).fillMaxWidth(),
@@ -212,7 +234,7 @@ private fun ContextMenuSheet(vm: BrowserViewModel, element: GeckoSession.Content
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 if (link != null) {
                     MenuRow("open", "Glance") { act { vm.openGlance(link) } }
-                    MenuRow("plus", "Open in new tab") { act { vm.newTab(link) } }
+                    if (!vm.privateMode) MenuRow("plus", "Open in new tab") { act { vm.newTab(link) } }
                     MenuRow("privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
                     MenuRow("link", "Copy link") {
                         act {
@@ -367,6 +389,9 @@ private fun SettingsScreen(vm: BrowserViewModel) {
                         ActionRow("Sign out", destructive = true) { vm.signOut() }
                     }
                 }
+                Section("General") {
+                    DefaultBrowserRow()
+                }
                 Section("Search") {
                     SearchEngine.entries.forEach { engine ->
                         Row(
@@ -439,10 +464,47 @@ private fun SettingsScreen(vm: BrowserViewModel) {
 
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
-    Text(title, Modifier.padding(start = 4.dp, top = 18.dp, bottom = 8.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    Text(
+        title,
+        Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
     Column(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 14.dp, vertical = 8.dp),
     ) { content() }
+}
+
+/**
+ * Asks Android for the browser role. When the user already declined twice the
+ * system answers instantly without a dialog, so we fall back to the default
+ * apps screen.
+ */
+@Composable
+private fun DefaultBrowserRow() {
+    val context = LocalContext.current
+    val roles = remember { context.getSystemService(RoleManager::class.java) }
+    var isDefault by remember { mutableStateOf(roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true) }
+    var askedAt by remember { mutableStateOf(0L) }
+    val request = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        isDefault = roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true
+        if (!isDefault && System.currentTimeMillis() - askedAt < 400) {
+            context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+        }
+    }
+    if (isDefault) {
+        SettingRow("Default browser", "Zen opens the links you tap in other apps")
+    } else {
+        ActionRow("Set Zen as default browser") {
+            askedAt = System.currentTimeMillis()
+            if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
+                request.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
+            } else {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+            }
+        }
+    }
 }
 
 @Composable

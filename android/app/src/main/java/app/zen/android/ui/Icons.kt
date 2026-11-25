@@ -151,16 +151,14 @@ fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modif
     if (current != null) {
         Image(current, null, modifier.size(size).clip(RoundedCornerShape(size / 5)))
     } else {
-        Box(
-            modifier.size(size).clip(RoundedCornerShape(size / 4)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                UrlInput.display(url).take(1).uppercase(),
-                fontSize = (size.value * 0.55f).sp,
-                lineHeight = (size.value * 0.6f).sp,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            )
+        // Desktop falls back to a globe for pages without a favicon.
+        val globe = remember { ZenIconSet.get(context, "globe") }
+        Box(modifier.size(size), contentAlignment = Alignment.Center) {
+            if (globe != null) {
+                Icon(globe, null, Modifier.size(size * 0.95f), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            } else {
+                Text(UrlInput.display(url).take(1).uppercase(), fontSize = (size.value * 0.55f).sp)
+            }
         }
     }
 }

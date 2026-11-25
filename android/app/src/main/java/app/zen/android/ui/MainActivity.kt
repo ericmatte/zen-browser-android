@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity(), ActivityBridge {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
-            }
+            } || vm.privateMode
             val spaceAccent = vm.space(vm.activeSpace)?.theme.accent()
             ZenTheme(dark = dark, accent = spaceAccent ?: systemAccent()) {
                 BrowserScreen(vm, dark)
@@ -65,6 +65,10 @@ class MainActivity : ComponentActivity(), ActivityBridge {
     }
 
     private fun handle(intent: Intent?) {
+        if (intent?.action == ACTION_NEW_PRIVATE_TAB) {
+            vm.requestPrivateBrowsing()
+            return
+        }
         val text = when (intent?.action) {
             Intent.ACTION_VIEW -> intent.dataString
             Intent.ACTION_WEB_SEARCH -> intent.getStringExtra("query")
@@ -94,3 +98,5 @@ class MainActivity : ComponentActivity(), ActivityBridge {
         if (multiple) multiFileLauncher.launch(mimeTypes) else singleFileLauncher.launch(mimeTypes)
     }
 }
+
+const val ACTION_NEW_PRIVATE_TAB = "app.zen.android.action.NEW_PRIVATE_TAB"

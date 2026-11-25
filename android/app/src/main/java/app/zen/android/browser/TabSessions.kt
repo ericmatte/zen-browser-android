@@ -53,7 +53,20 @@ object Gecko {
                 .consoleOutput(false)
                 .aboutConfigEnabled(false)
                 .build(),
-        ).also { runtime = it }
+        ).also {
+            runtime = it
+            installGoogleDark(it)
+        }
+    }
+
+    private fun installGoogleDark(runtime: GeckoRuntime) {
+        val controller = runtime.webExtensionController
+        controller.ensureBuiltIn("resource://android/assets/extensions/google-dark/", "google-dark@zen.android")
+            .accept({ extension ->
+                if (extension != null && !extension.metaData.allowedInPrivateBrowsing) {
+                    controller.setAllowedInPrivateBrowsing(extension, true)
+                }
+            }, { null })
     }
 
     fun setColorScheme(context: Context, scheme: Int) {

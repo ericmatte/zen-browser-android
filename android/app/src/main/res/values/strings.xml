@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_private_short">Private tab</string>
+    <string name="shortcut_private_long">New private tab</string>
+</resources>

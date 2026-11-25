@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.zen.android.browser.Gecko
+import app.zen.android.browser.History
+import app.zen.android.browser.Visit
 import app.zen.android.browser.PRIVATE_PREFIX
 import app.zen.android.browser.PageRequests
 import app.zen.android.browser.TabEvents
@@ -57,6 +59,7 @@ private fun isLocalOnly(tabId: String) = tabId == SCRATCH_TAB || tabId == LOGIN_
 sealed interface Suggestion {
     data class OpenTab(val tab: TabItem) : Suggestion
     data class Search(val text: String) : Suggestion
+    data class Visited(val visit: Visit) : Suggestion
 }
 
 class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
@@ -67,6 +70,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     )
     val settings = AppSettings(app)
     val requests = PageRequests(app)
+    private val visits = History(File(app.filesDir, "history.json"))
+    private var saveVisits: Job? = null
     private val auth = FxaAuth()
     private val sessions = TabSessions(app, this, requests, requests)
 
@@ -81,6 +86,12 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var session by mutableStateOf<GeckoSession?>(null)
         private set
     var url by mutableStateOf("")
+        private set
+    var title by mutableStateOf("")
+        private set
+
+    /** The desktop-style search shown at launch and for every new tab. */
+    var launcherOpen by mutableStateOf(false)
         private set
     var secure by mutableStateOf(true)
         private set
@@ -123,12 +134,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     private val titles = mutableMapOf<String, String>()
     private val urls = mutableMapOf<String, String>()
-    private val history = mutableMapOf<String, Boolean>()
+    private val backHistory = mutableMapOf<String, Boolean>()
     private var lastScrollY = 0
     private var scrollSettle: Job? = null
     private var pendingLogin: PendingLogin? = null
     private var syncLoop: Job? = null
     private var lastNormalTab: TabItem? = null
+    private val recentIds = ArrayDeque<String>()
 
     private val home get() = settings.state.value.searchEngine.home
 
@@ -141,8 +153,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             val tab = first?.tabs?.firstOrNull()
             if (tab != null) selectTab(tab.id, tab.url) else selectTab(SCRATCH_TAB, home)
             ready = true
-            incoming?.let(::openIncoming)
+            val link = incoming
             incoming = null
+            when {
+                privateRequested -> startPrivateBrowsing()
+                link != null -> openIncoming(link)
+                else -> launcherOpen = true
+            }
             startSyncLoop()
         }
     }
@@ -173,7 +190,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         activeTab = tabId
         session = s
         url = urls[tabId] ?: tabUrl
-        canGoBack = history[tabId] == true
+        title = titles[tabId] ?: knownTab(tabId)?.title ?: UrlInput.display(url)
+        recentIds.remove(tabId)
+        recentIds.addFirst(tabId)
+        canGoBack = backHistory[tabId] == true
         chromeVisible = true
         lastScrollY = 0
         endFind()
@@ -185,6 +205,51 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun selectTab(tab: TabItem) = selectTab(tab.id, tab.url)
+
+    private fun knownTab(id: String): TabItem? =
+        privateTabs.firstOrNull { it.id == id } ?: repository.view.value.tab(id)
+
+    /** Most recently used tabs of the current mode, newest first, for the long-press switcher. */
+    fun recentTabs(limit: Int = 6): List<TabItem> = recentIds
+        .asSequence()
+        .filter { it != activeTab && isPrivateTab(it) == privateMode }
+        .mapNotNull { id -> knownTab(id)?.let { it.copy(title = titles[id] ?: it.title, url = urls[id] ?: it.url) } }
+        .take(limit)
+        .toList()
+
+    fun openLauncher() {
+        clearSuggestions()
+        launcherOpen = true
+    }
+
+    fun closeLauncher() {
+        clearSuggestions()
+        launcherOpen = false
+    }
+
+    /** Text typed in the launcher opens in a new tab of the current space, like desktop's new-tab search. */
+    fun launch(input: String) {
+        closeLauncher()
+        if (input.isBlank()) return
+        val target = UrlInput.resolve(input, settings.state.value.searchEngine)
+        // Entering private mode opens a placeholder home tab; the first search replaces it instead of piling up tabs.
+        if (isPrivateTab(activeTab) && !canGoBack && url.trimEnd('/') == home.trimEnd('/')) navigate(target) else newTab(target)
+    }
+
+    fun pick(suggestion: Suggestion, inNewTab: Boolean) {
+        clearSuggestions()
+        when (suggestion) {
+            is Suggestion.OpenTab -> selectTab(suggestion.tab)
+            is Suggestion.Visited -> if (inNewTab) newTab(suggestion.visit.url) else navigate(suggestion.visit.url)
+            is Suggestion.Search -> if (inNewTab) launch(suggestion.text) else navigate(suggestion.text)
+        }
+        launcherOpen = false
+    }
+    fun hasNeighbor(step: Int): Boolean {
+        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return false
+        val index = tabs.indexOfFirst { it.id == activeTab }
+        return index >= 0 && tabs.getOrNull(index + step) != null
+    }
 
     /** Swiping the address bar walks the visible tab list in sidebar order. */
     fun switchTab(step: Int): Boolean {
@@ -227,21 +292,36 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun newPrivateTab(target: String = home) {
+        if (!privateMode) togglePrivateMode()
         val tab = TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
         privateTabs += tab
-        privateMode = true
         selectTab(tab)
     }
 
     fun togglePrivateMode() {
         if (privateMode) {
             privateMode = false
+            applyThemeMode(settings.state.value.themeMode)
             val back = lastNormalTab ?: space(activeSpace)?.tabs?.firstOrNull()
             if (back != null) selectTab(back) else selectTab(SCRATCH_TAB, home)
         } else {
             privateMode = true
+            // Private browsing always renders sites dark, which also tells it apart from normal mode at a glance.
+            Gecko.setColorScheme(getApplication(), GeckoRuntimeSettings.COLOR_SCHEME_DARK)
             privateTabs.lastOrNull()?.let(::selectTab) ?: newPrivateTab()
         }
+    }
+
+    private var privateRequested = false
+
+    fun requestPrivateBrowsing() {
+        if (ready) startPrivateBrowsing() else privateRequested = true
+    }
+
+    /** Entry point of the "New private tab" launcher shortcut. */
+    fun startPrivateBrowsing() {
+        if (!privateMode) togglePrivateMode()
+        openLauncher()
     }
 
     fun closePrivateTabs() {
@@ -260,7 +340,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         sessions.close(tabId)
         urls.remove(tabId)
         titles.remove(tabId)
-        history.remove(tabId)
+        backHistory.remove(tabId)
     }
 
     private fun closeTabs(ids: List<String>) {
@@ -290,7 +370,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun goBack(): Boolean {
-        if (history[activeTab] != true) return false
+        if (backHistory[activeTab] != true) return false
         session?.goBack()
         return true
     }
@@ -341,6 +421,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         findResult = ""
     }
 
+    /** Results appear only once something is typed, like desktop's new-tab search. */
     fun suggest(text: String) {
         suggestJob?.cancel()
         val query = text.trim()
@@ -348,12 +429,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             suggestions = emptyList()
             return
         }
-        val openTabs = (repository.view.value.spaces().flatMap { it.tabs } + repository.view.value.essentials())
+        val candidates = if (privateMode) privateTabs.toList() else repository.view.value.spaces().flatMap { it.tabs } + repository.view.value.essentials()
+        val openTabs = candidates
             .filter { it.id != activeTab && (it.title.contains(query, true) || it.url.contains(query, true)) }
             .distinctBy { it.id }
             .take(3)
             .map { Suggestion.OpenTab(it) }
-        suggestions = openTabs
+        val openUrls = openTabs.map { it.tab.url }.toSet()
+        val visited = if (privateMode) emptyList() else visits.search(query, 4).filter { it.url !in openUrls }.map { Suggestion.Visited(it) }
+        suggestions = openTabs + visited
         if (privateMode) return
         suggestJob = viewModelScope.launch {
             delay(120)
@@ -363,13 +447,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                     conn.connectTimeout = 3000
                     conn.readTimeout = 3000
                     try {
-                        UrlInput.parseSuggestions(conn.inputStream.bufferedReader().use { it.readText() })
+                        UrlInput.parseSuggestions(conn.inputStream.bufferedReader().use { it.readText() }, limit = 4)
                     } finally {
                         conn.disconnect()
                     }
                 }.getOrDefault(emptyList())
             }
-            suggestions = openTabs + remote.map { Suggestion.Search(it) }
+            suggestions = openTabs + visited + remote.map { Suggestion.Search(it) }
         }
     }
 
@@ -417,7 +501,17 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     fun clearBrowsingData() {
+        visits.clear()
+        persistVisits()
         Gecko.clearData(getApplication()).accept { message = "Browsing data cleared" }
+    }
+
+    private fun persistVisits() {
+        saveVisits?.cancel()
+        saveVisits = viewModelScope.launch(Dispatchers.IO) {
+            delay(1500)
+            visits.save()
+        }
     }
 
     fun requestCapture() {
@@ -472,6 +566,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     override fun onTitle(tabId: String, title: String) {
         if (tabId == LOGIN_TAB || tabId.endsWith(GLANCE_TAB)) return
         titles[tabId] = title
+        if (tabId == activeTab) this.title = title
         updatePrivateTab(tabId) { it.copy(title = title.ifBlank { it.url }) }
     }
 
@@ -490,6 +585,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     override fun onPageLoaded(tabId: String) {
         if (tabId == activeTab) requestCapture()
+        if (!isPrivateTab(tabId) && tabId != LOGIN_TAB && !tabId.endsWith(GLANCE_TAB)) {
+            urls[tabId]?.let { visits.record(it, titles[tabId].orEmpty()) }
+            persistVisits()
+        }
         if (isLocalOnly(tabId)) return
         val u = urls[tabId] ?: return
         val synced = repository.view.value.tab(tabId) ?: return
@@ -499,7 +598,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     override fun onCanGoBack(tabId: String, canGoBack: Boolean) {
-        history[tabId] = canGoBack
+        backHistory[tabId] = canGoBack
         if (tabId == activeTab) this.canGoBack = canGoBack
     }
 
