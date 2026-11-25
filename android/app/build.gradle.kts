@@ -20,8 +20,8 @@ android {
         applicationId = "app.zen.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -58,7 +58,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     // The NDK lets AGP strip GeckoView's debug symbols (libxul shrinks from ~150 MB).
     ndkVersion = "30.0.16248370"
     packaging { jniLibs { useLegacyPackaging = true } }
@@ -72,6 +75,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.activity:activity-compose:1.10.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    // Installs the Compose baseline profiles on sideloaded installs, which cuts cold start and jank.
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

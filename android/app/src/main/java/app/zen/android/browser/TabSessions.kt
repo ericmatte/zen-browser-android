@@ -1,6 +1,9 @@
 package app.zen.android.browser
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.ContentBlocking
 import org.mozilla.geckoview.GeckoResult
@@ -8,15 +11,26 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
+import org.mozilla.geckoview.StorageController
+import org.mozilla.geckoview.WebResponse
+
+const val PRIVATE_PREFIX = "private:"
+
+fun isPrivateTab(tabId: String) = tabId.startsWith(PRIVATE_PREFIX)
 
 interface TabEvents {
     fun onLocation(tabId: String, url: String)
     fun onTitle(tabId: String, title: String)
+    fun onPageStart(tabId: String) {}
     fun onPageLoaded(tabId: String)
     fun onCanGoBack(tabId: String, canGoBack: Boolean)
     fun onScroll(tabId: String, scrollY: Int)
     fun onProgress(tabId: String, progress: Int)
-    fun onOpenInNewTab(url: String)
+    fun onOpenInNewTab(fromTabId: String, url: String)
+    fun onContextMenu(tabId: String, element: GeckoSession.ContentDelegate.ContextElement) {}
+    fun onFullScreen(tabId: String, fullScreen: Boolean) {}
+    fun onDownload(tabId: String, response: WebResponse) {}
+    fun onSecurity(tabId: String, secure: Boolean) {}
     /** Returns true when the navigation was consumed (e.g. the FxA OAuth redirect). */
     fun interceptNavigation(tabId: String, url: String): Boolean = false
 }
@@ -35,24 +49,36 @@ object Gecko {
                         .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
                         .build()
                 )
+                .preferredColorScheme(GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM)
                 .consoleOutput(false)
                 .aboutConfigEnabled(false)
                 .build(),
         ).also { runtime = it }
     }
+
+    fun setColorScheme(context: Context, scheme: Int) {
+        runtime(context).settings.preferredColorScheme = scheme
+    }
+
+    fun clearData(context: Context): GeckoResult<Void> =
+        runtime(context).storageController.clearData(StorageController.ClearFlags.ALL)
 }
 
 /**
  * Keeps at most [maxLive] GeckoSessions alive. Older tabs are closed and
  * reopened from their URL on demand, which keeps memory (and therefore
  * responsiveness) bounded no matter how many tabs the desktop syncs over.
+ * Private tabs are never evicted: reopening them would lose their state.
  */
 class TabSessions(
     private val context: Context,
     private val events: TabEvents,
+    private val prompts: GeckoSession.PromptDelegate? = null,
+    private val permissions: GeckoSession.PermissionDelegate? = null,
     private val maxLive: Int = 4,
 ) {
     private val live = LinkedHashMap<String, GeckoSession>(16, 0.75f, true)
+    private val desktopMode = mutableSetOf<String>()
 
     fun obtain(tabId: String, url: String): GeckoSession {
         live[tabId]?.let { return it }
@@ -66,24 +92,59 @@ class TabSessions(
     fun peek(tabId: String): GeckoSession? = live[tabId]
 
     fun close(tabId: String) {
+        desktopMode.remove(tabId)
         live.remove(tabId)?.close()
+    }
+
+    fun closeAll(where: (String) -> Boolean) {
+        live.keys.filter(where).forEach { close(it) }
     }
 
     fun setActive(tabId: String) {
         live.forEach { (id, session) -> session.setActive(id == tabId) }
     }
 
+    fun isDesktopMode(tabId: String) = tabId in desktopMode
+
+    fun toggleDesktopMode(tabId: String) {
+        val session = live[tabId] ?: return
+        val desktop = tabId !in desktopMode
+        if (desktop) desktopMode += tabId else desktopMode -= tabId
+        session.settings.userAgentMode = if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+        session.settings.viewportMode = if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+        session.reload()
+    }
+
     private fun trim(keep: String) {
-        while (live.size > maxLive) {
-            val eldest = live.keys.first { it != keep }
-            live.remove(eldest)?.close()
+        while (live.count { !isPrivateTab(it.key) } > maxLive) {
+            val eldest = live.keys.firstOrNull { it != keep && !isPrivateTab(it) } ?: return
+            close(eldest)
+        }
+    }
+
+    private fun openExternally(uri: String): Boolean {
+        val intent = if (uri.startsWith("intent:")) {
+            runCatching { Intent.parseUri(uri, Intent.URI_INTENT_SCHEME) }.getOrNull() ?: return false
+        } else {
+            Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+        }
+        intent.addCategory(Intent.CATEGORY_BROWSABLE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        intent.component = null
+        intent.selector = null
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        } catch (_: SecurityException) {
+            false
         }
     }
 
     private fun create(tabId: String): GeckoSession {
         val session = GeckoSession(
             GeckoSessionSettings.Builder()
-                .usePrivateMode(false)
+                .usePrivateMode(isPrivateTab(tabId))
                 .useTrackingProtection(true)
                 .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
                 .build()
@@ -103,11 +164,15 @@ class TabSessions(
             override fun onLoadRequest(
                 session: GeckoSession,
                 request: GeckoSession.NavigationDelegate.LoadRequest,
-            ): GeckoResult<AllowOrDeny>? =
-                if (events.interceptNavigation(tabId, request.uri)) GeckoResult.deny() else null
+            ): GeckoResult<AllowOrDeny>? {
+                if (events.interceptNavigation(tabId, request.uri)) return GeckoResult.deny()
+                val scheme = request.uri.substringBefore(':').lowercase()
+                if (scheme !in WEB_SCHEMES && openExternally(request.uri)) return GeckoResult.deny()
+                return null
+            }
 
             override fun onNewSession(session: GeckoSession, uri: String): GeckoResult<GeckoSession>? {
-                events.onOpenInNewTab(uri)
+                events.onOpenInNewTab(tabId, uri)
                 return null
             }
         }
@@ -115,15 +180,39 @@ class TabSessions(
             override fun onTitleChange(session: GeckoSession, title: String?) {
                 title?.let { events.onTitle(tabId, it) }
             }
+
+            override fun onContextMenu(session: GeckoSession, screenX: Int, screenY: Int, element: GeckoSession.ContentDelegate.ContextElement) =
+                events.onContextMenu(tabId, element)
+
+            override fun onFullScreen(session: GeckoSession, fullScreen: Boolean) = events.onFullScreen(tabId, fullScreen)
+
+            override fun onExternalResponse(session: GeckoSession, response: WebResponse) = events.onDownload(tabId, response)
+
+            override fun onCrash(session: GeckoSession) {
+                close(tabId)
+            }
+
+            override fun onKill(session: GeckoSession) {
+                close(tabId)
+            }
         }
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) = events.onProgress(tabId, progress)
+            override fun onPageStart(session: GeckoSession, url: String) = events.onPageStart(tabId)
             override fun onPageStop(session: GeckoSession, success: Boolean) = events.onPageLoaded(tabId)
+            override fun onSecurityChange(session: GeckoSession, info: GeckoSession.ProgressDelegate.SecurityInformation) =
+                events.onSecurity(tabId, info.isSecure)
         }
         session.scrollDelegate = object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) = events.onScroll(tabId, scrollY)
         }
+        prompts?.let { session.promptDelegate = it }
+        permissions?.let { session.permissionDelegate = it }
         session.open(Gecko.runtime(context))
         return session
+    }
+
+    private companion object {
+        val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "file", "javascript", "moz-extension", "resource", "view-source")
     }
 }

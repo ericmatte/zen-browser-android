@@ -1,21 +1,39 @@
 package app.zen.android.ui
 
 import android.app.Application
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import android.webkit.URLUtil
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.zen.android.browser.Gecko
+import app.zen.android.browser.PRIVATE_PREFIX
+import app.zen.android.browser.PageRequests
 import app.zen.android.browser.TabEvents
 import app.zen.android.browser.TabSessions
 import app.zen.android.browser.UrlInput
+import app.zen.android.browser.isPrivateTab
 import app.zen.android.sync.FileCredentialStore
 import app.zen.android.sync.FxaAuth
 import app.zen.android.sync.LocalEdit
 import app.zen.android.sync.PendingLogin
+import app.zen.android.sync.Space
 import app.zen.android.sync.SpacesRepository
 import app.zen.android.sync.SpacesState
 import app.zen.android.sync.SyncStatus
+import app.zen.android.sync.TabItem
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,12 +41,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
-import java.io.File
+import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
+import org.mozilla.geckoview.GeckoSession.FinderResult
+import org.mozilla.geckoview.WebResponse
 
 const val SCRATCH_TAB = "__scratch__"
 const val LOGIN_TAB = "__login__"
-private const val HOME_URL = "https://duckduckgo.com/"
+const val GLANCE_TAB = "__glance__"
+
+/** Tabs that exist only on this phone: never written to the synced spaces collection. */
+private fun isLocalOnly(tabId: String) = tabId == SCRATCH_TAB || tabId == LOGIN_TAB || tabId.endsWith(GLANCE_TAB) || isPrivateTab(tabId)
+
+sealed interface Suggestion {
+    data class OpenTab(val tab: TabItem) : Suggestion
+    data class Search(val text: String) : Suggestion
+}
 
 class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
@@ -36,12 +65,16 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         dir = File(app.filesDir, "sync"),
         credentialStore = FileCredentialStore(File(app.noBackupFilesDir, "fxa.json")),
     )
+    val settings = AppSettings(app)
+    val requests = PageRequests(app)
     private val auth = FxaAuth()
-    private val sessions = TabSessions(app, this)
+    private val sessions = TabSessions(app, this, requests, requests)
 
     val spaces: StateFlow<SpacesState> = repository.view
     val status: StateFlow<SyncStatus> = repository.status
 
+    var ready by mutableStateOf(false)
+        private set
     var activeSpace by mutableStateOf<String?>(null)
     var activeTab by mutableStateOf(SCRATCH_TAB)
         private set
@@ -49,29 +82,67 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         private set
     var url by mutableStateOf("")
         private set
-    var progress by mutableStateOf(100)
+    var secure by mutableStateOf(true)
         private set
-    var canGoBack by mutableStateOf(false)
+    var progress by mutableIntStateOf(100)
         private set
     var chromeVisible by mutableStateOf(true)
         private set
+    var fullScreen by mutableStateOf(false)
+        private set
+    var canGoBack by mutableStateOf(false)
+        private set
     var loginSession by mutableStateOf<GeckoSession?>(null)
         private set
-    var error by mutableStateOf<String?>(null)
+    var showSettings by mutableStateOf(false)
+    var message by mutableStateOf<String?>(null)
+    var pageTopColor by mutableStateOf<Color?>(null)
+    var contextMenu by mutableStateOf<ContextElement?>(null)
+
+    var privateMode by mutableStateOf(false)
+        private set
+    val privateTabs = mutableStateListOf<TabItem>()
+
+    var glance by mutableStateOf<GeckoSession?>(null)
+        private set
+    var glanceUrl by mutableStateOf("")
+        private set
+
+    var findQuery by mutableStateOf<String?>(null)
+        private set
+    var findResult by mutableStateOf("")
+        private set
+
+    var suggestions by mutableStateOf<List<Suggestion>>(emptyList())
+        private set
+    private var suggestJob: Job? = null
+
+    /** Bumped whenever the visible page may have changed colour, so the UI re-samples it. */
+    var captureRequest by mutableIntStateOf(0)
+        private set
 
     private val titles = mutableMapOf<String, String>()
     private val urls = mutableMapOf<String, String>()
+    private val history = mutableMapOf<String, Boolean>()
     private var lastScrollY = 0
+    private var scrollSettle: Job? = null
     private var pendingLogin: PendingLogin? = null
     private var syncLoop: Job? = null
+    private var lastNormalTab: TabItem? = null
+
+    private val home get() = settings.state.value.searchEngine.home
 
     init {
+        applyThemeMode(settings.state.value.themeMode)
         viewModelScope.launch {
             repository.load()
             val first = repository.view.value.spaces().firstOrNull()
             activeSpace = first?.uuid
             val tab = first?.tabs?.firstOrNull()
-            if (tab != null) selectTab(tab.id, tab.url) else selectTab(SCRATCH_TAB, HOME_URL)
+            if (tab != null) selectTab(tab.id, tab.url) else selectTab(SCRATCH_TAB, home)
+            ready = true
+            incoming?.let(::openIncoming)
+            incoming = null
             startSyncLoop()
         }
     }
@@ -92,22 +163,54 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun syncNow() = viewModelScope.launch { repository.sync() }
 
+    fun space(uuid: String?): Space? = repository.view.value.spaces().firstOrNull { it.uuid == uuid }
+
+    fun isDesktopMode() = sessions.isDesktopMode(activeTab)
+
     fun selectTab(tabId: String, tabUrl: String) {
         val s = sessions.obtain(tabId, urls[tabId] ?: tabUrl)
         sessions.setActive(tabId)
         activeTab = tabId
         session = s
         url = urls[tabId] ?: tabUrl
+        canGoBack = history[tabId] == true
         chromeVisible = true
-        repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tabId } }?.let { activeSpace = it.uuid }
+        lastScrollY = 0
+        endFind()
+        if (!isPrivateTab(tabId)) {
+            lastNormalTab = TabItem(tabId, url, titles[tabId] ?: url, false)
+            repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tabId } }?.let { activeSpace = it.uuid }
+        }
+        requestCapture()
+    }
+
+    fun selectTab(tab: TabItem) = selectTab(tab.id, tab.url)
+
+    /** Swiping the address bar walks the visible tab list in sidebar order. */
+    fun switchTab(step: Int): Boolean {
+        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return false
+        val index = tabs.indexOfFirst { it.id == activeTab }
+        val target = tabs.getOrNull(if (index < 0) 0 else index + step) ?: return false
+        selectTab(target)
+        return true
     }
 
     fun navigate(input: String) {
-        val target = UrlInput.resolve(input)
+        val target = UrlInput.resolve(input, settings.state.value.searchEngine)
         session?.loadUri(target) ?: selectTab(activeTab, target)
+        suggestions = emptyList()
     }
 
-    fun newTab(target: String = HOME_URL) {
+    fun reload() {
+        if (progress in 1..99) session?.stop() else session?.reload()
+    }
+
+    fun goForward() = session?.goForward()
+
+    fun toggleDesktopMode() = sessions.toggleDesktopMode(activeTab)
+
+    fun newTab(target: String = home) {
+        if (privateMode) return newPrivateTab(target)
         val space = activeSpace
         if (space == null) {
             sessions.close(SCRATCH_TAB)
@@ -123,24 +226,156 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    fun closeTab(tabId: String) {
-        sessions.close(tabId)
-        urls.remove(tabId)
-        titles.remove(tabId)
-        viewModelScope.launch {
-            if (tabId != SCRATCH_TAB) repository.edit(LocalEdit.CloseTab(tabId))
-            if (tabId == activeTab) {
-                val next = repository.view.value.spaces().firstOrNull { it.uuid == activeSpace }?.tabs?.firstOrNull()
-                if (next != null) selectTab(next.id, next.url) else selectTab(SCRATCH_TAB, HOME_URL)
-            }
-            repository.sync()
+    fun newPrivateTab(target: String = home) {
+        val tab = TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
+        privateTabs += tab
+        privateMode = true
+        selectTab(tab)
+    }
+
+    fun togglePrivateMode() {
+        if (privateMode) {
+            privateMode = false
+            val back = lastNormalTab ?: space(activeSpace)?.tabs?.firstOrNull()
+            if (back != null) selectTab(back) else selectTab(SCRATCH_TAB, home)
+        } else {
+            privateMode = true
+            privateTabs.lastOrNull()?.let(::selectTab) ?: newPrivateTab()
         }
     }
 
+    fun closePrivateTabs() {
+        privateTabs.forEach { forget(it.id) }
+        privateTabs.clear()
+        if (privateMode) togglePrivateMode()
+    }
+
+    fun closeTab(tabId: String) = closeTabs(listOf(tabId))
+
+    fun clearRegularTabs(spaceUuid: String) {
+        space(spaceUuid)?.regularTabs?.map { it.id }?.let(::closeTabs)
+    }
+
+    private fun forget(tabId: String) {
+        sessions.close(tabId)
+        urls.remove(tabId)
+        titles.remove(tabId)
+        history.remove(tabId)
+    }
+
+    private fun closeTabs(ids: List<String>) {
+        if (ids.isEmpty()) return
+        ids.forEach(::forget)
+        val privateIds = ids.filter(::isPrivateTab).toSet()
+        if (privateIds.isNotEmpty()) {
+            privateTabs.removeAll { it.id in privateIds }
+            if (activeTab in privateIds) {
+                privateTabs.lastOrNull()?.let(::selectTab) ?: togglePrivateMode()
+            }
+        }
+        val synced = ids.filter { !isLocalOnly(it) }
+        viewModelScope.launch {
+            synced.forEach { repository.edit(LocalEdit.CloseTab(it)) }
+            if (activeTab in ids && !isPrivateTab(activeTab)) {
+                val next = space(activeSpace)?.tabs?.firstOrNull()
+                if (next != null) selectTab(next) else selectTab(SCRATCH_TAB, home)
+            }
+            if (synced.isNotEmpty()) repository.sync()
+        }
+    }
+
+    fun move(edit: LocalEdit.MoveItem) = viewModelScope.launch {
+        repository.edit(edit)
+        repository.sync()
+    }
+
     fun goBack(): Boolean {
-        if (!canGoBack) return false
+        if (history[activeTab] != true) return false
         session?.goBack()
         return true
+    }
+
+    fun openGlance(target: String) {
+        val id = (if (isPrivateTab(activeTab)) PRIVATE_PREFIX else "") + GLANCE_TAB
+        sessions.close(id)
+        glanceUrl = target
+        glance = sessions.obtain(id, target)
+    }
+
+    fun closeGlance() {
+        sessions.close(PRIVATE_PREFIX + GLANCE_TAB)
+        sessions.close(GLANCE_TAB)
+        glance = null
+    }
+
+    fun expandGlance() {
+        val target = glanceUrl
+        closeGlance()
+        newTab(target)
+    }
+
+    fun startFind() {
+        findQuery = ""
+        findResult = ""
+    }
+
+    fun find(text: String, backwards: Boolean = false) {
+        val finder = session?.finder ?: return
+        val changed = text != findQuery
+        findQuery = text
+        if (text.isEmpty()) {
+            finder.clear()
+            findResult = ""
+            return
+        }
+        val flags = if (backwards) GeckoSession.FINDER_FIND_BACKWARDS else 0
+        finder.find(if (changed) text else null, flags).accept { r: FinderResult? ->
+            findResult = if (r == null || !r.found) "0/0" else "${r.current}/${r.total}"
+        }
+    }
+
+    fun endFind() {
+        if (findQuery == null) return
+        session?.finder?.clear()
+        findQuery = null
+        findResult = ""
+    }
+
+    fun suggest(text: String) {
+        suggestJob?.cancel()
+        val query = text.trim()
+        if (query.isEmpty() || query == url) {
+            suggestions = emptyList()
+            return
+        }
+        val openTabs = (repository.view.value.spaces().flatMap { it.tabs } + repository.view.value.essentials())
+            .filter { it.id != activeTab && (it.title.contains(query, true) || it.url.contains(query, true)) }
+            .distinctBy { it.id }
+            .take(3)
+            .map { Suggestion.OpenTab(it) }
+        suggestions = openTabs
+        if (privateMode) return
+        suggestJob = viewModelScope.launch {
+            delay(120)
+            val remote = withContext(Dispatchers.IO) {
+                runCatching {
+                    val conn = URL(settings.state.value.searchEngine.suggestUrl(query)).openConnection() as HttpURLConnection
+                    conn.connectTimeout = 3000
+                    conn.readTimeout = 3000
+                    try {
+                        UrlInput.parseSuggestions(conn.inputStream.bufferedReader().use { it.readText() })
+                    } finally {
+                        conn.disconnect()
+                    }
+                }.getOrDefault(emptyList())
+            }
+            suggestions = openTabs + remote.map { Suggestion.Search(it) }
+        }
+    }
+
+    fun clearSuggestions() {
+        suggestJob?.cancel()
+        suggestions = emptyList()
     }
 
     fun beginLogin() {
@@ -157,7 +392,53 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun signOut() = viewModelScope.launch {
         repository.signOut()
         activeSpace = null
-        selectTab(SCRATCH_TAB, HOME_URL)
+        sessions.closeAll { !isPrivateTab(it) }
+        selectTab(SCRATCH_TAB, home)
+    }
+
+    fun applyThemeMode(mode: ThemeMode) {
+        val scheme = when (mode) {
+            ThemeMode.SYSTEM -> GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM
+            ThemeMode.LIGHT -> GeckoRuntimeSettings.COLOR_SCHEME_LIGHT
+            ThemeMode.DARK -> GeckoRuntimeSettings.COLOR_SCHEME_DARK
+        }
+        Gecko.setColorScheme(getApplication(), scheme)
+        // Android 12+ stores the app's own night mode, so the splash screen matches the chosen theme on the next launch.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            val ui = getApplication<Application>().getSystemService(android.app.UiModeManager::class.java)
+            ui?.setApplicationNightMode(
+                when (mode) {
+                    ThemeMode.SYSTEM -> android.app.UiModeManager.MODE_NIGHT_AUTO
+                    ThemeMode.LIGHT -> android.app.UiModeManager.MODE_NIGHT_NO
+                    ThemeMode.DARK -> android.app.UiModeManager.MODE_NIGHT_YES
+                }
+            )
+        }
+    }
+
+    fun clearBrowsingData() {
+        Gecko.clearData(getApplication()).accept { message = "Browsing data cleared" }
+    }
+
+    fun requestCapture() {
+        captureRequest++
+    }
+
+    fun exitFullScreen() {
+        session?.exitFullScreen()
+    }
+
+    private var incoming: String? = null
+
+    /** A link or text another app handed us: opened as a new tab in the current space, like desktop's external links. */
+    fun openIncoming(text: String) {
+        if (!ready) {
+            incoming = text
+            return
+        }
+        val link = Regex("""https?://\S+""").find(text)?.value ?: text
+        val target = UrlInput.resolve(link, settings.state.value.searchEngine)
+        if (privateMode) newPrivateTab(target) else newTab(target)
     }
 
     override fun interceptNavigation(tabId: String, url: String): Boolean {
@@ -169,7 +450,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                 repository.signIn(credentials)
                 repository.view.value.spaces().firstOrNull()?.let { activeSpace = it.uuid }
             } catch (e: Exception) {
-                error = "Sign-in failed: ${e.message}"
+                message = "Sign-in failed: ${e.message}"
             } finally {
                 cancelLogin()
             }
@@ -179,16 +460,37 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     override fun onLocation(tabId: String, url: String) {
         if (tabId == LOGIN_TAB) return
+        if (tabId.endsWith(GLANCE_TAB)) {
+            glanceUrl = url
+            return
+        }
         urls[tabId] = url
         if (tabId == activeTab) this.url = url
+        updatePrivateTab(tabId) { it.copy(url = url) }
     }
 
     override fun onTitle(tabId: String, title: String) {
-        if (tabId != LOGIN_TAB) titles[tabId] = title
+        if (tabId == LOGIN_TAB || tabId.endsWith(GLANCE_TAB)) return
+        titles[tabId] = title
+        updatePrivateTab(tabId) { it.copy(title = title.ifBlank { it.url }) }
+    }
+
+    private fun updatePrivateTab(tabId: String, change: (TabItem) -> TabItem) {
+        if (!isPrivateTab(tabId)) return
+        val i = privateTabs.indexOfFirst { it.id == tabId }
+        if (i >= 0) privateTabs[i] = change(privateTabs[i])
+    }
+
+    override fun onPageStart(tabId: String) {
+        if (tabId == activeTab) {
+            chromeVisible = true
+            lastScrollY = 0
+        }
     }
 
     override fun onPageLoaded(tabId: String) {
-        if (tabId == LOGIN_TAB || tabId == SCRATCH_TAB) return
+        if (tabId == activeTab) requestCapture()
+        if (isLocalOnly(tabId)) return
         val u = urls[tabId] ?: return
         val synced = repository.view.value.tab(tabId) ?: return
         val title = titles[tabId] ?: synced.title
@@ -197,6 +499,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     override fun onCanGoBack(tabId: String, canGoBack: Boolean) {
+        history[tabId] = canGoBack
         if (tabId == activeTab) this.canGoBack = canGoBack
     }
 
@@ -209,13 +512,49 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             delta > 12 -> chromeVisible = false
             delta < -12 -> chromeVisible = true
         }
+        scrollSettle?.cancel()
+        scrollSettle = viewModelScope.launch {
+            delay(250)
+            requestCapture()
+        }
     }
 
     override fun onProgress(tabId: String, progress: Int) {
         if (tabId == activeTab) this.progress = progress
     }
 
-    override fun onOpenInNewTab(url: String) = newTab(url)
+    override fun onSecurity(tabId: String, secure: Boolean) {
+        if (tabId == activeTab) this.secure = secure
+    }
+
+    override fun onOpenInNewTab(fromTabId: String, url: String) {
+        if (isPrivateTab(fromTabId)) newPrivateTab(url) else newTab(url)
+    }
+
+    override fun onContextMenu(tabId: String, element: ContextElement) {
+        if (tabId == activeTab && (element.linkUri != null || element.srcUri != null)) contextMenu = element
+    }
+
+    override fun onFullScreen(tabId: String, fullScreen: Boolean) {
+        if (tabId == activeTab) this.fullScreen = fullScreen
+    }
+
+    override fun onDownload(tabId: String, response: WebResponse) {
+        runCatching { response.body?.close() }
+        val app = getApplication<Application>()
+        val name = URLUtil.guessFileName(response.uri, response.headers["Content-Disposition"], response.headers["Content-Type"])
+        try {
+            val request = DownloadManager.Request(Uri.parse(response.uri))
+                .setTitle(name)
+                .setMimeType(response.headers["Content-Type"])
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+            (app.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
+            message = "Downloading $name"
+        } catch (e: Exception) {
+            message = "Download failed: ${e.message}"
+        }
+    }
 
     override fun onCleared() {
         stopSyncLoop()

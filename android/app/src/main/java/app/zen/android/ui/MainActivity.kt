@@ -1,41 +1,77 @@
 package app.zen.android.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.OnBackPressedCallback
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.getValue
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.zen.android.browser.ActivityBridge
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), ActivityBridge {
     private val vm: BrowserViewModel by viewModels()
 
+    private var permissionResult: ((Boolean) -> Unit)? = null
+    private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+        permissionResult?.invoke(granted.isNotEmpty() && granted.values.all { it })
+        permissionResult = null
+    }
+
+    private var singleFileResult: ((List<Uri>) -> Unit)? = null
+    private val singleFileLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        singleFileResult?.invoke(listOfNotNull(uri))
+        singleFileResult = null
+    }
+    private val multiFileLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        singleFileResult?.invoke(uris)
+        singleFileResult = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        splash.setKeepOnScreenCondition { !vm.ready }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
         )
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                when {
-                    vm.loginSession != null -> vm.cancelLogin()
-                    vm.goBack() -> Unit
-                    else -> moveTaskToBack(true)
-                }
-            }
-        })
+        window.isNavigationBarContrastEnforced = false
+        vm.requests.bridge = this
+        if (savedInstanceState == null) handle(intent)
         setContent {
-            val dark = isSystemInDarkTheme()
-            MaterialTheme(colorScheme = if (dark) zenDark else zenLight) {
-                BrowserScreen(vm)
+            val prefs by vm.settings.state.collectAsStateWithLifecycle()
+            val dark = when (prefs.themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.LIGHT -> false
+                ThemeMode.DARK -> true
+            }
+            val spaceAccent = vm.space(vm.activeSpace)?.theme.accent()
+            ZenTheme(dark = dark, accent = spaceAccent ?: systemAccent()) {
+                BrowserScreen(vm, dark)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handle(intent)
+    }
+
+    private fun handle(intent: Intent?) {
+        val text = when (intent?.action) {
+            Intent.ACTION_VIEW -> intent.dataString
+            Intent.ACTION_WEB_SEARCH -> intent.getStringExtra("query")
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            else -> null
+        }
+        if (!text.isNullOrBlank()) vm.openIncoming(text)
     }
 
     override fun onStart() {
@@ -47,18 +83,14 @@ class MainActivity : ComponentActivity() {
         vm.stopSyncLoop()
         super.onStop()
     }
-}
 
-private val zenAccent = Color(0xFFF76F53)
-private val zenDark = darkColorScheme(
-    primary = zenAccent,
-    background = Color(0xFF1B1B1F),
-    surface = Color(0xFF232327),
-    surfaceVariant = Color(0xFF2E2E33),
-)
-private val zenLight = lightColorScheme(
-    primary = zenAccent,
-    background = Color(0xFFF2F0F3),
-    surface = Color(0xFFFAF9FB),
-    surfaceVariant = Color(0xFFE8E6EA),
-)
+    override fun requestPermissions(permissions: Array<String>, result: (Boolean) -> Unit) {
+        permissionResult = result
+        permissionLauncher.launch(permissions)
+    }
+
+    override fun pickFiles(mimeTypes: Array<String>, multiple: Boolean, result: (List<Uri>) -> Unit) {
+        singleFileResult = result
+        if (multiple) multiFileLauncher.launch(mimeTypes) else singleFileLauncher.launch(mimeTypes)
+    }
+}

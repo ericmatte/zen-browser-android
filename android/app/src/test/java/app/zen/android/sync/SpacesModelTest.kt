@@ -133,4 +133,87 @@ class SpacesModelTest {
         val tombstone = uploads.first { it.first == "t1" }.second
         assertTrue(tombstone.getBoolean("deleted"))
     }
+
+    @Test
+    fun `moving a tab before a sibling reorders the space children`() {
+        val (next, changes) = desktop.apply(listOf(LocalEdit.MoveItem("t3", "s1", "f1", pinned = null)))
+        assertEquals(listOf("t3", "t2"), next.spaces()[1].tabs.map { it.id })
+        assertEquals(setOf("s1"), changes.keys)
+    }
+
+    @Test
+    fun `moving a tab into the pinned section pins it`() {
+        val (next, changes) = desktop.apply(listOf(LocalEdit.MoveItem("t1", "s2", null, pinned = true)))
+        assertTrue(next.tab("t1")!!.pinned)
+        assertTrue(changes.containsKey("t1"))
+    }
+
+    @Test
+    fun `moving a tab out of a folder updates both parents`() {
+        val (next, changes) = desktop.apply(listOf(LocalEdit.MoveItem("t2", "s1", null, pinned = false)))
+        assertEquals(listOf("f1", "t3", "t2"), next.spaces()[1].items.map { it.id })
+        assertTrue((next.spaces()[1].items[0] as FolderItem).items.isEmpty())
+        assertEquals(setOf("f1", "s1", "t2"), changes.keys)
+    }
+
+    @Test
+    fun `move edits survive a json round trip`() {
+        val edit = LocalEdit.MoveItem("a", "b", null, pinned = true)
+        assertEquals(edit, LocalEdit.fromJson(edit.toJson()))
+    }
+
+    @Test
+    fun `space theme and icons are read from desktop records`() {
+        val theme = JSONObject().put("type", "gradient").put("opacity", 0.7).put(
+            "gradientColors", JSONArray()
+                .put(JSONObject().put("c", JSONArray(listOf(10, 20, 30))).put("isPrimary", false))
+                .put(JSONObject().put("c", "#ff8800").put("isPrimary", true)),
+        )
+        val rec = space("s9", "Fun").apply {
+            getJSONObject("data").put("theme", theme).put("icon", "chrome://browser/skin/zen-icons/selectable/airplane.svg")
+        }
+        val sp = stateOf(layout(listOf("s9")), rec).spaces().single()
+        assertEquals(ZenIcon.Bundled("airplane"), sp.icon)
+        assertEquals(listOf(0xFFFF8800L, 0xFF0A141EL), sp.theme!!.colors)
+        assertEquals(0.7f, sp.theme!!.opacity)
+    }
+
+    @Test
+    fun `emoji icons are kept and unknown urls are dropped`() {
+        assertEquals(ZenIcon.Emoji("🏠"), ZenIcon.parse("🏠"))
+        assertNull(ZenIcon.parse("moz-extension://x/icon.png"))
+        assertNull(ZenIcon.parse(""))
+    }
+
+    @Test
+    fun `only data favicons are exposed on tabs`() {
+        val withData = tab("x", "https://a.com").apply { getJSONObject("data").put("icon", "data:image/png;base64,AA") }
+        val withRemote = tab("y", "https://a.com").apply { getJSONObject("data").put("icon", "https://a.com/f.ico") }
+        val state = stateOf(withData, withRemote)
+        assertEquals("data:image/png;base64,AA", state.tab("x")!!.icon)
+        assertNull(state.tab("y")!!.icon)
+    }
+
+    @Test
+    fun `dragging a regular tab above the separator pins it before the next item`() {
+        val edit = LocalEdit.placing("s1", "t3", pinnedIds = listOf("t3", "f1"), regularIds = listOf("t4"))
+        assertEquals(LocalEdit.MoveItem("t3", "s1", "f1", pinned = true), edit)
+        val (next, _) = desktop.apply(listOf(edit))
+        assertEquals(listOf("t3", "f1"), next.spaces()[1].items.map { it.id })
+        assertTrue(next.tab("t3")!!.pinned)
+    }
+
+    @Test
+    fun `dragging to the end of the list anchors on nothing`() {
+        assertEquals(LocalEdit.MoveItem("a", "s", null, pinned = false), LocalEdit.placing("s", "a", emptyList(), listOf("b", "a")))
+    }
+
+    @Test
+    fun `a tab renamed on desktop shows its static label`() {
+        val renamed = tab("r", "https://a.com").apply { getJSONObject("data").put("staticLabel", "Inbox") }
+        val plain = tab("p", "https://a.com").apply { getJSONObject("data").put("staticLabel", JSONObject.NULL) }
+        val state = stateOf(renamed, plain)
+        assertEquals("Inbox", state.tab("r")!!.title)
+        assertEquals("T-p", state.tab("p")!!.title)
+    }
 }
