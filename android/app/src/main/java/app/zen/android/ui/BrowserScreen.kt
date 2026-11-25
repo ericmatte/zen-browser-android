@@ -169,6 +169,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         drawer.screenPx = screenPx
         val swipe = remember(screenPx) { PageSwipe(scope, pageShift, screenPx, vm::hasNeighbor, vm::switchTab) }
         val landscape = maxWidth > maxHeight
+        LaunchedEffect(landscape) { vm.noteRotation() }
         val sideBar = landscape && !vm.fullScreen
         val barLift = BarHeight + BarMargin + barBottomMargin() + 6.dp
         val inset = maxWidth * BarSideInset
@@ -196,6 +197,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                             // Gecko opens the link menu while the finger is still down; from then on the finger can slide onto an entry.
                             awaitEachGesture {
                                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                vm.notePageTouch()
                                 while (true) {
                                     val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
                                     if (!change.pressed) break

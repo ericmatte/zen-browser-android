@@ -34,6 +34,21 @@ object UrlInput {
         }
     }
 
+    private val webLink = Regex("""https?://\S+""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Text handed over by another app (share, view, web search). Only web links
+     * open as addresses; anything with another scheme (file:, data:,
+     * javascript:, about:, intent:…) is searched as plain text, so no app can
+     * make the browser open local files or run script.
+     */
+    fun resolveIncoming(text: String, engine: SearchEngine): String {
+        webLink.find(text)?.let { return it.value }
+        val trimmed = text.trim()
+        if (scheme.containsMatchIn(trimmed) && !hostLike.matches(trimmed)) return engine.search(trimmed)
+        return resolve(trimmed, engine)
+    }
+
     /** True when [input] would be sent to the search engine rather than opened as an address. */
     fun isSearch(input: String, engine: SearchEngine = SearchEngine.GOOGLE): Boolean {
         val text = input.trim()

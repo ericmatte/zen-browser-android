@@ -16,6 +16,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.zen.android.browser.Dismissal
 import app.zen.android.browser.EmptySelection
+import app.zen.android.browser.FullScreenGate
 import app.zen.android.browser.Gecko
 import app.zen.android.browser.History
 import app.zen.android.browser.HistorySort
@@ -743,8 +744,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             incoming = text
             return
         }
-        val link = Regex("""https?://\S+""").find(text)?.value ?: text
-        val target = UrlInput.resolve(link, settings.state.value.searchEngine)
+        val target = UrlInput.resolveIncoming(text, settings.state.value.searchEngine)
         clearSuggestions()
         launcherOpen = false
         if (privateMode) newPrivateTab(target) else newTab(target)
@@ -857,7 +857,22 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         if (tabId == activeTab && (element.linkUri != null || element.srcUri != null)) contextMenu = element
     }
 
+    private var lastPageTouch = 0L
+    private var lastRotation = 0L
+
+    fun notePageTouch() {
+        lastPageTouch = System.currentTimeMillis()
+    }
+
+    fun noteRotation() {
+        lastRotation = System.currentTimeMillis()
+    }
+
     override fun onFullScreen(tabId: String, fullScreen: Boolean) {
+        if (fullScreen && !FullScreenGate.allowed(System.currentTimeMillis(), lastPageTouch, lastRotation)) {
+            sessions.peek(tabId)?.exitFullScreen()
+            return
+        }
         if (tabId == activeTab) this.fullScreen = fullScreen
     }
 

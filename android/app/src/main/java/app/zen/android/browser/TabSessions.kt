@@ -62,7 +62,9 @@ object Gecko {
 
     /**
      * Gecko prefs with no runtime-settings API. Rotating into landscape is not a
-     * user gesture, so fullscreen-on-rotate needs untrusted fullscreen requests.
+     * user gesture, so fullscreen-on-rotate needs untrusted fullscreen requests;
+     * FullScreenGate puts the gesture requirement back in the app (a recent
+     * touch on the page or a rotation), so a page cannot cover the browser alone.
      */
     private fun writeConfig(context: Context): java.io.File =
         java.io.File(context.filesDir, "geckoview-config.yaml").apply {
