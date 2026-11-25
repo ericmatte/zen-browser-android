@@ -13,6 +13,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.MediaSession
 import org.mozilla.geckoview.StorageController
+import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebResponse
 
 const val PRIVATE_PREFIX = "private:"
@@ -34,6 +35,8 @@ interface TabEvents {
     fun onDownload(tabId: String, response: WebResponse) {}
     fun onSecurity(tabId: String, secure: Boolean) {}
     fun onMediaPlaying(tabId: String, playing: Boolean) {}
+    /** The phone turned sideways while this tab plays a video, even a silent one MediaSession ignores. */
+    fun onVideoRotated(tabId: String) {}
     /** Returns true when the navigation was consumed (e.g. the FxA OAuth redirect). */
     fun interceptNavigation(tabId: String, url: String): Boolean = false
 }
@@ -59,8 +62,16 @@ object Gecko {
                 .build(),
         ).also {
             runtime = it
-            installGoogleDark(it)
+            installHelpers(it)
         }
+    }
+
+    private var helpers: WebExtension? = null
+    private val waitingForHelpers = mutableListOf<(WebExtension) -> Unit>()
+
+    /** Runs [use] with the built-in helper extension once it is installed. */
+    fun withHelpers(use: (WebExtension) -> Unit) = synchronized(waitingForHelpers) {
+        helpers?.let(use) ?: waitingForHelpers.add(use)
     }
 
     /**
@@ -75,12 +86,16 @@ object Gecko {
             writeText("prefs:\n  full-screen-api.allow-trusted-requests-only: false\n")
         }
 
-    private fun installGoogleDark(runtime: GeckoRuntime) {
+    private fun installHelpers(runtime: GeckoRuntime) {
         val controller = runtime.webExtensionController
         controller.ensureBuiltIn("resource://android/assets/extensions/google-dark/", "google-dark@zen.android")
             .accept({ extension ->
-                if (extension != null && !extension.metaData.allowedInPrivateBrowsing) {
-                    controller.setAllowedInPrivateBrowsing(extension, true)
+                if (extension == null) return@accept
+                if (!extension.metaData.allowedInPrivateBrowsing) controller.setAllowedInPrivateBrowsing(extension, true)
+                synchronized(waitingForHelpers) {
+                    helpers = extension
+                    waitingForHelpers.forEach { it(extension) }
+                    waitingForHelpers.clear()
                 }
             }, { null })
     }
@@ -278,6 +293,15 @@ class TabSessions(
         session.scrollDelegate = object : GeckoSession.ScrollDelegate {
             override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) = events.onScroll(tabId, scrollY)
         }
+        // Only the helper's content script can send these: pages have no access to native messaging.
+        Gecko.withHelpers { extension ->
+            session.webExtensionController.setMessageDelegate(extension, object : WebExtension.MessageDelegate {
+                override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
+                    if ((message as? org.json.JSONObject)?.optString("type") == "videoRotated") events.onVideoRotated(tabId)
+                    return GeckoResult.fromValue(true)
+                }
+            }, HELPERS_APP)
+        }
         prompts?.let { session.promptDelegate = it }
         permissions?.let { session.permissionDelegate = it }
         session.open(Gecko.runtime(context))
@@ -285,6 +309,7 @@ class TabSessions(
     }
 
     private companion object {
+        const val HELPERS_APP = "zen"
         val WEB_SCHEMES = setOf("http", "https", "about", "data", "blob", "file", "javascript", "moz-extension", "resource", "view-source")
     }
 }

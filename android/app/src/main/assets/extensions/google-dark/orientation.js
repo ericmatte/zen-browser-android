@@ -20,11 +20,29 @@ const playerOf = (video) => {
   return target;
 };
 
-screen.orientation.addEventListener("change", () => {
+// Entering fullscreen while the page is still laid out for portrait leaves it
+// frozen at the old size on some sites, so wait for the landscape layout first.
+const landscapeLayout = () =>
+  new Promise((resolve) => {
+    if (innerWidth > innerHeight) return resolve();
+    const done = () => {
+      removeEventListener("resize", check);
+      resolve();
+    };
+    const check = () => innerWidth > innerHeight && done();
+    addEventListener("resize", check);
+    setTimeout(done, 600);
+  });
+
+screen.orientation.addEventListener("change", async () => {
   if (screen.orientation.type.startsWith("landscape")) {
     if (document.fullscreenElement) return;
     const video = playingVideo();
-    if (video) playerOf(video).requestFullscreen().catch(() => {});
+    if (!video) return;
+    // The app only lets a page cover the browser after a touch; this tells it a video asked, even a silent one.
+    await browser.runtime.sendNativeMessage("zen", { type: "videoRotated" }).catch(() => {});
+    await landscapeLayout();
+    if (!video.paused) playerOf(video).requestFullscreen().catch(() => {});
   } else if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }

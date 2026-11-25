@@ -9,6 +9,7 @@ package app.zen.android.browser
 object FullScreenGate {
     const val WINDOW_MILLIS = 1500L
 
-    fun allowed(now: Long, lastTouch: Long, lastRotation: Long, mediaPlaying: Boolean): Boolean =
-        now - lastTouch <= WINDOW_MILLIS || (mediaPlaying && now - lastRotation <= WINDOW_MILLIS)
+    fun allowed(now: Long, lastTouch: Long, lastRotation: Long, mediaPlaying: Boolean, lastVideoRotated: Long = 0): Boolean =
+        now - lastTouch <= WINDOW_MILLIS ||
+            (now - lastRotation <= WINDOW_MILLIS && (mediaPlaying || now - lastVideoRotated <= WINDOW_MILLIS))
 }

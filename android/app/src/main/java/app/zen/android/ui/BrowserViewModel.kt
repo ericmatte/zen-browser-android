@@ -945,8 +945,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         if (playing) playingTabs += tabId else playingTabs -= tabId
     }
 
+    private val videoRotated = mutableMapOf<String, Long>()
+
+    override fun onVideoRotated(tabId: String) {
+        videoRotated[tabId] = System.currentTimeMillis()
+    }
+
     override fun onFullScreen(tabId: String, fullScreen: Boolean) {
-        if (fullScreen && !FullScreenGate.allowed(System.currentTimeMillis(), lastPageTouch, lastRotation, tabId in playingTabs)) {
+        val now = System.currentTimeMillis()
+        if (fullScreen && !FullScreenGate.allowed(now, lastPageTouch, lastRotation, tabId in playingTabs, videoRotated[tabId] ?: 0)) {
             sessions.peek(tabId)?.exitFullScreen()
             return
         }
