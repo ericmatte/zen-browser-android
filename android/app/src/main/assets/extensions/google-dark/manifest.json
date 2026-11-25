@@ -1,9 +1,17 @@
 {
   "manifest_version": 2,
-  "name": "Zen Google dark",
-  "version": "2.0",
-  "description": "Asks Google for its own dark theme in private browsing.",
+  "name": "Zen Android helpers",
+  "version": "3.0",
+  "description": "Google's own dark theme in private browsing, and fullscreen video on rotation.",
   "browser_specific_settings": { "gecko": { "id": "google-dark@zen.android" } },
   "permissions": ["webRequest", "webRequestBlocking", "*://*.google.com/*", "*://*.google.ca/*", "*://*.google.fr/*", "*://*.google.co.uk/*"],
-  "background": { "scripts": ["background.js"] }
+  "background": { "scripts": ["background.js"] },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["orientation.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
 }

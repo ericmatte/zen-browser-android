@@ -50,6 +50,7 @@ object Gecko {
                         .build()
                 )
                 .preferredColorScheme(GeckoRuntimeSettings.COLOR_SCHEME_SYSTEM)
+                .configFilePath(writeConfig(context).absolutePath)
                 .consoleOutput(false)
                 .aboutConfigEnabled(false)
                 .build(),
@@ -58,6 +59,15 @@ object Gecko {
             installGoogleDark(it)
         }
     }
+
+    /**
+     * Gecko prefs with no runtime-settings API. Rotating into landscape is not a
+     * user gesture, so fullscreen-on-rotate needs untrusted fullscreen requests.
+     */
+    private fun writeConfig(context: Context): java.io.File =
+        java.io.File(context.filesDir, "geckoview-config.yaml").apply {
+            writeText("prefs:\n  full-screen-api.allow-trusted-requests-only: false\n")
+        }
 
     private fun installGoogleDark(runtime: GeckoRuntime) {
         val controller = runtime.webExtensionController

@@ -217,7 +217,10 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
             }
 
             if (!vm.fullScreen) {
-                EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
+                // The edge strip overrides Android's back swipe, so it exists only while the page itself is on screen.
+                val pageOnScreen = !drawer.isOpen && !vm.showSettings && !vm.showLibrary && !vm.launcherOpen &&
+                    vm.loginSession == null && vm.glance == null && vm.contextMenu == null && !menu.open
+                if (pageOnScreen) EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
                 LauncherBackdrop(vm)
                 BottomChrome(
                     vm = vm,
@@ -401,11 +404,15 @@ class DrawerController(private val scope: CoroutineScope) {
  */
 class PageSwipe(
     private val scope: CoroutineScope,
-    private val shift: Animatable<Float, *>,
-    private val widthPx: Float,
+    val shift: Animatable<Float, *>,
+    val widthPx: Float,
     private val hasNeighbor: (Int) -> Boolean,
     private val switch: (Int) -> Boolean,
 ) {
+    /** True while the new tab's page slides in; its identity is already settled in the bar by then. */
+    var incoming by mutableStateOf(false)
+        private set
+
     private fun stepFor(dx: Float) = if (dx > 0) -1 else 1
 
     fun drag(dx: Float) {
@@ -427,9 +434,11 @@ class PageSwipe(
             }
             val out = if (offset > 0) widthPx else -widthPx
             shift.animateTo(out, tween(160))
+            incoming = true
             switch(step)
             shift.snapTo(-out)
             shift.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 380f))
+            incoming = false
         }
     }
 }

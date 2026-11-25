@@ -20,16 +20,19 @@ The app reuses desktop code or ports it closely:
 | `src/zen/library` history section (search, filter, sort, clear) | `ui/Library.kt` |
 | `src/zen/folders/ZenFolder.mjs` folder icon + open animation | `ui/FolderIcon.kt` |
 | `zen-icons/common/selectable/*.svg` space/folder icons | `assets/zen-icons.json` |
-| `zen-icons/nucleo/*.svg` UI icons | `assets/ui-icons.json` |
+| `zen-icons/nucleo/*.svg` UI icons, `common/library/library.svg` | `assets/ui-icons.json` |
 | `src/zen/tokens`, `zen-theme.css`, `vertical-tabs.css` colours | `ui/Theme.kt`, `ui/SpacesDrawer.kt` |
 | `configs/branding/release` logo | launcher and splash icons |
 
 ## Features
 
-- Home: desktop-style search at launch and for each new tab. Results
-  (open tabs, history, suggestions) appear only once you type.
+- Home: at launch nothing loads; the bottom bar morphs into the search, docked
+  above the keyboard. Results (open tabs, history, suggestions) appear above
+  it once you type, best match nearest the bar.
 - Sidebar: spaces (swipe between them, colours blend with the finger), pinned
-  tabs, folders, the "Clear" separator, space switcher, library (history).
+  tabs, folders, the "Clear" separator, temporary tabs at the bottom with
+  "New Tab" last, space switcher (hold a space for its menu). History opens
+  inside the sidebar, which grows full width like desktop's library.
   Tap a space name to rename it (synced); tap its icon to fold pinned tabs.
   Swipe a tab left to close (or unpin), right to pin (or unpin). Hold an item
   for its menu; slide onto an entry and release, or move away to drag it
@@ -39,12 +42,19 @@ The app reuses desktop code or ports it closely:
   opened on desktop are never closed from the phone.
 - Sync runs on its own: at launch, on resume, after each change and every
   5 minutes.
-- Address bar: shows the page title; tap it for the URL and a copy-link
-  button, docked above the keyboard. Swipe it to slide to the previous or next
-  tab, flick up for a new tab. Hold the sidebar button for recent tabs, slide
-  onto one and release to open it.
-- Private tabs: sidebar on the right, never synced, no history, dark pages
-  (Google included). Launcher shortcut "New private tab".
+- Address bar: 90% wide, shows the favicon (green/red lock) and title; tap it
+  for the URL and a copy-link button, docked above the keyboard. Swipe it to
+  slide to the previous or next tab (the title slides along), flick up for a
+  new tab. Hold the sidebar button for recent tabs. Find in page is the bar
+  itself. The bar steps aside while a page's own text field uses the keyboard.
+- Landscape: the bar rests as a vertical strip on the left edge. Rotating
+  while a video plays enters fullscreen; rotating back leaves it.
+- Every menu works like iOS: hold, slide onto an entry, release. A plain tap
+  also works.
+- Private tabs: near-black, sidebar on the right, never synced, no history.
+  Google shows its own dark theme. Entering private mode with no tab opens the
+  search; otherwise the private sidebar lets you pick. Launcher shortcut
+  "New private tab".
 - Glance, link menu, find in page, desktop site, downloads, file uploads,
   site permissions, full-screen video, default-browser setting.
 

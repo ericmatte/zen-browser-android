@@ -7,6 +7,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,7 +75,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
     var confirmClear by remember { mutableStateOf(false) }
     fun set(change: (Preferences) -> Preferences) = vm.settings.update(change)
 
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(Modifier.fillMaxSize(), color = settingsBackground()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.showSettings = false }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
@@ -209,9 +211,21 @@ private fun Section(title: String, content: @Composable () -> Unit) {
         color = MaterialTheme.colorScheme.onSurface,
     )
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 14.dp, vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(settingsPanel())
+            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
     ) { content() }
 }
+
+/** Panels stand clearly off the page, like grouped lists on iOS and Android settings. */
+@Composable
+private fun settingsBackground(): Color = if (MaterialTheme.colorScheme.background.isLight()) Color(0xFFE9E9EF) else Color(0xFF0C0C0F)
+
+@Composable
+private fun settingsPanel(): Color = if (MaterialTheme.colorScheme.background.isLight()) Color.White else Color(0xFF232329)
 
 /**
  * Asks Android for the browser role. When the user already declined twice the

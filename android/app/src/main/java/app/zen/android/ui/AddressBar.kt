@@ -70,6 +70,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -301,10 +304,10 @@ private fun AddressBar(
                 }
             } else {
                 SidebarButton(vm, onSidebar, recents)
-                if (vm.hasPage) SiteIdentity(vm)
-                TitleLabel(
-                    vm = vm,
-                    modifier = Modifier
+                SwipingIdentity(
+                    vm,
+                    swipe,
+                    Modifier
                         .weight(1f)
                         .fillMaxHeight()
                         .pageSwipe(vm, swipe)
@@ -340,7 +343,7 @@ private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> U
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
-            if (vm.hasPage) SiteIdentity(vm)
+            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp))
             Box(
                 Modifier
                     .weight(1f)
@@ -348,7 +351,7 @@ private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> U
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onEdit() },
                 contentAlignment = Alignment.Center,
             ) {
-                TitleLabel(vm, Modifier.sideways())
+                TitleLabel(vm.title.ifBlank { UrlInput.display(vm.url) }, Modifier.sideways())
             }
             IconButton(onClick = vm::openLauncher) {
                 Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
@@ -397,30 +400,77 @@ private fun Modifier.pageSwipe(vm: BrowserViewModel, swipe: PageSwipe): Modifier
     )
 }
 
+/**
+ * Favicon and title of the tab, riding along with the page while the bar is
+ * swiped: the neighbour tab's identity slides in from the side it comes from.
+ */
 @Composable
-private fun TitleLabel(vm: BrowserViewModel, modifier: Modifier) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        Text(
-            text = vm.title.ifBlank { UrlInput.display(vm.url) }.ifEmpty { "Search or enter address" },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
+private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Modifier) {
+    var slot by remember { mutableIntStateOf(1) }
+    val shift = if (swipe.incoming) 0f else swipe.shift.value
+    val offset = shift * slot / swipe.widthPx
+    val neighbor = when {
+        shift > 0f -> vm.neighbor(-1)?.let { it to offset - slot }
+        shift < 0f -> vm.neighbor(1)?.let { it to offset + slot }
+        else -> null
     }
+    Box(modifier.clipToBounds().onSizeChanged { slot = it.width.coerceAtLeast(1) }, contentAlignment = Alignment.Center) {
+        Identity(
+            vm.url,
+            vm.secure,
+            vm.title.ifBlank { UrlInput.display(vm.url) }.ifEmpty { "Search or enter address" },
+            showIcon = vm.hasPage,
+            modifier = Modifier.graphicsLayer {
+                translationX = offset
+                alpha = 1f - (kotlin.math.abs(offset) / slot).coerceIn(0f, 1f)
+            },
+        )
+        neighbor?.let { (tab, x) ->
+            Identity(
+                tab.url,
+                secure = !tab.url.startsWith("http:"),
+                tab.title.ifBlank { UrlInput.display(tab.url) },
+                showIcon = true,
+                modifier = Modifier.graphicsLayer {
+                    translationX = x
+                    alpha = 1f - (kotlin.math.abs(x) / slot).coerceIn(0f, 1f)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier) {
+    Row(modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp))
+        TitleLabel(title, Modifier)
+    }
+}
+
+@Composable
+private fun TitleLabel(title: String, modifier: Modifier) {
+    Text(
+        text = title,
+        modifier = modifier,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        style = MaterialTheme.typography.bodyLarge,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurface,
+        textAlign = TextAlign.Center,
+    )
 }
 
 val SecureGreen = Color(0xFF2EB872)
 
 /** The page's favicon with a small lock: green and closed on HTTPS, red and open otherwise. */
 @Composable
-private fun SiteIdentity(vm: BrowserViewModel) {
-    val web = vm.url.startsWith("http")
-    val secure = !web || vm.secure
-    Box(Modifier.padding(end = 6.dp).size(24.dp)) {
-        Favicon(vm.url, null, 20.dp)
+private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier) {
+    val web = url.startsWith("http")
+    val safe = !web || secure
+    Box(modifier.size(24.dp)) {
+        Favicon(url, null, 20.dp)
         if (web) {
             Box(
                 Modifier
@@ -428,10 +478,10 @@ private fun SiteIdentity(vm: BrowserViewModel) {
                     .offset(x = 3.dp, y = 3.dp)
                     .size(13.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(if (secure) SecureGreen else MaterialTheme.colorScheme.error),
+                    .background(if (safe) SecureGreen else MaterialTheme.colorScheme.error),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(zenIcon(if (secure) "security" else "security-broken"), if (secure) "Secure" else "Not secure", Modifier.size(8.dp), tint = Color.White)
+                Icon(zenIcon(if (safe) "security" else "security-broken"), if (safe) "Secure" else "Not secure", Modifier.size(8.dp), tint = Color.White)
             }
         }
     }

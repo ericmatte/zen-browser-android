@@ -323,6 +323,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         return index >= 0 && tabs.getOrNull(index + step) != null
     }
 
+    /** The tab a swipe of [step] would land on, with its live title and address. */
+    fun neighbor(step: Int): TabItem? {
+        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return null
+        val index = tabs.indexOfFirst { it.id == activeTab }
+        if (index < 0) return null
+        return tabs.getOrNull(index + step)?.let { it.copy(title = titles[it.id] ?: it.title, url = urls[it.id] ?: it.url) }
+    }
+
     /** Swiping the address bar walks the visible tab list in sidebar order. */
     fun switchTab(step: Int): Boolean {
         val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return false
@@ -682,6 +690,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
         val link = Regex("""https?://\S+""").find(text)?.value ?: text
         val target = UrlInput.resolve(link, settings.state.value.searchEngine)
+        clearSuggestions()
+        launcherOpen = false
         if (privateMode) newPrivateTab(target) else newTab(target)
     }
 
