@@ -25,6 +25,7 @@ interface TabEvents {
     fun onPageStart(tabId: String) {}
     fun onPageLoaded(tabId: String)
     fun onCanGoBack(tabId: String, canGoBack: Boolean)
+    fun onCanGoForward(tabId: String, canGoForward: Boolean) {}
     fun onScroll(tabId: String, scrollY: Int)
     fun onProgress(tabId: String, progress: Int)
     fun onOpenInNewTab(fromTabId: String, url: String)
@@ -223,6 +224,8 @@ class TabSessions(
             }
 
             override fun onCanGoBack(session: GeckoSession, canGoBack: Boolean) = events.onCanGoBack(tabId, canGoBack)
+
+            override fun onCanGoForward(session: GeckoSession, canGoForward: Boolean) = events.onCanGoForward(tabId, canGoForward)
 
             override fun onLoadRequest(
                 session: GeckoSession,

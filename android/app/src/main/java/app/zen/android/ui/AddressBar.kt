@@ -26,6 +26,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -346,7 +347,7 @@ private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSi
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
-            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp))
+            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp), vm.loading)
             Box(
                 Modifier
                     .weight(1f)
@@ -423,6 +424,7 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
             vm.secure,
             vm.title.ifBlank { UrlInput.display(vm.url) }.ifEmpty { "Search or enter address" },
             showIcon = vm.hasPage,
+            loading = vm.loading,
             modifier = Modifier.graphicsLayer {
                 translationX = offset
                 alpha = 1f - (kotlin.math.abs(offset) / slot).coerceIn(0f, 1f)
@@ -444,9 +446,9 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
 }
 
 @Composable
-private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier) {
+private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false) {
     Row(modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp))
+        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 8.dp), loading)
         TitleLabel(title, Modifier)
     }
 }
@@ -469,11 +471,11 @@ val SecureGreen = Color(0xFF2EB872)
 
 /** The page's favicon with a small lock: green and closed on HTTPS, red and open otherwise. */
 @Composable
-private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier) {
+private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false) {
     val web = url.startsWith("http")
     val safe = !web || secure
     Box(modifier.size(24.dp)) {
-        Favicon(url, null, 20.dp)
+        Favicon(url, null, 20.dp, loading = loading)
         if (web) {
             Box(
                 Modifier
@@ -525,7 +527,7 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
                         val event = awaitPointerEvent()
                         val change = event.changes.first()
                         change.consume()
-                        if (recents.hover(origin + change.position)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (recents.hover(origin + change.position)) haptics.performHapticFeedback(MenuHoverTick)
                         if (!change.pressed) break
                     }
                     recents.release()?.let { vm.selectTab(it) }
@@ -693,8 +695,9 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
             shadowElevation = 14.dp,
         ) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+                // A disabled entry is dimmed, ignores taps and slides, and leaves the menu open.
                 @Composable
-                fun Nav(icon: String, label: String, action: () -> Unit) {
+                fun Nav(icon: String, label: String, enabled: Boolean = true, action: () -> Unit) {
                     val run = {
                         close()
                         action()
@@ -703,17 +706,23 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
                         Modifier
                             .size(48.dp)
                             .clip(RoundedCornerShape(24.dp))
-                            .slideTarget(menu.select, label, run)
-                            .background(if (menu.select.hovered == label) highlight else Color.Transparent)
-                            .clickable(onClick = run),
+                            .then(if (enabled) Modifier.slideTarget(menu.select, label, run) else Modifier)
+                            .background(if (enabled && menu.select.hovered == label) highlight else Color.Transparent)
+                            // Still swallows the tap when disabled, so it never reaches the backdrop that closes the menu.
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = if (enabled) LocalIndication.current else null,
+                            ) { if (enabled) run() },
                         contentAlignment = Alignment.Center,
-                    ) { Icon(zenIcon(icon), label, Modifier.size(18.dp)) }
+                    ) {
+                        Icon(zenIcon(icon), label, Modifier.size(18.dp).graphicsLayer { alpha = if (enabled) 1f else 0.3f })
+                    }
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Nav("back", "Back") { vm.goBack() }
-                    Nav("forward", "Forward") { vm.goForward() }
-                    Nav(if (vm.loading) "close" else "reload", if (vm.loading) "Stop" else "Reload") { vm.reload() }
-                    Nav("share", "Share") { share(context, vm.url) }
+                    Nav("back", "Back", enabled = vm.canGoBack) { vm.goBack() }
+                    Nav("forward", "Forward", enabled = vm.canGoForward) { vm.goForward() }
+                    Nav(if (vm.loading) "close" else "reload", if (vm.loading) "Stop" else "Reload", enabled = vm.hasPage) { vm.reload() }
+                    Nav("share", "Share", enabled = vm.hasPage) { share(context, vm.url) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
@@ -738,7 +747,6 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
                 Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
                 Item("Find in page", "search-page") { vm.startFind() }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
-                Item("History", "history") { vm.showLibrary = true }
                 Item("Settings", "settings") { vm.showSettings = true }
             }
         }

@@ -53,7 +53,10 @@ The app reuses desktop code or ports it closely:
   in the page's colour like the status bar. Rotating
   while a video plays enters fullscreen; rotating back leaves it.
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
-  also works.
+  also works. Each entry the finger reaches ticks the vibration motor
+  (Settings → Haptic feedback, on by default).
+- The sidebar opens from the bar's sidebar button; the screen edges keep
+  Android's back gesture.
 - Private tabs: near-black, sidebar on the right, never synced, no history.
   Google shows its own dark theme. Entering private mode with no tab opens the
   search; otherwise the private sidebar lets you pick. Launcher shortcut

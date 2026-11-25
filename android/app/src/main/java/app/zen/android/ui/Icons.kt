@@ -8,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -163,14 +164,19 @@ object Favicons {
 }
 
 @Composable
-fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modifier) {
+fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modifier, loading: Boolean = false) {
     val context = LocalContext.current
     val key = Favicons.host(url) ?: url
     var bitmap by remember(key, dataIcon) { mutableStateOf(if (dataIcon == null) Favicons.cached(key) else null) }
-    LaunchedEffect(key, dataIcon) { if (bitmap == null) bitmap = Favicons.load(context, url, dataIcon) }
+    // Tried again once the page settles: many sites only serve their icon after the page itself.
+    LaunchedEffect(key, dataIcon, loading) { if (bitmap == null) bitmap = Favicons.load(context, url, dataIcon) }
     val current = bitmap
     if (current != null) {
         Image(current, null, modifier.size(size).clip(RoundedCornerShape(size / 5)))
+    } else if (loading) {
+        Box(modifier.size(size), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(Modifier.size(size * 0.8f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), strokeWidth = 2.dp)
+        }
     } else {
         // Desktop falls back to a globe for pages without a favicon.
         val globe = remember { ZenIconSet.get(context, "globe") }

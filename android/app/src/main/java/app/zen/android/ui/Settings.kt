@@ -107,6 +107,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
                     ChoiceRow("Close temporary tabs", "Unpinned tabs opened on this phone, once unused", TabCleanup.entries, prefs.tabCleanup, { it.label }) { v -> set { it.copy(tabCleanup = v) } }
                     SwitchRow("Select the last used tab when closing one", null, prefs.selectRecentOnClose) { v -> set { it.copy(selectRecentOnClose = v) } }
                     SwitchRow("Glance", "Preview links from the long-press menu", prefs.glance) { v -> set { it.copy(glance = v) } }
+                    SwitchRow("Haptic feedback", "Vibrate on long presses and while sliding across menu entries", prefs.haptics) { v -> set { it.copy(haptics = v) } }
                 }
 
                 Section("Search") {

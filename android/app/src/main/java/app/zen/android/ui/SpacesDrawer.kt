@@ -443,7 +443,7 @@ private fun EssentialsGrid(vm: BrowserViewModel, essentials: List<TabItem>, gest
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         change.consume()
-                        if (gestures.move(gridOrigin + change.position, slop)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (gestures.move(gridOrigin + change.position, slop)) haptics.performHapticFeedback(MenuHoverTick)
                         if (!change.pressed) break
                     }
                     val dropInList = gestures.dragging && gestures.listRect.contains(gestures.pointer)
@@ -663,7 +663,7 @@ private fun SpacePage(
                         val change = event.changes.firstOrNull { it.id == down.id } ?: break
                         change.consume()
                         val point = listOrigin + change.position
-                        if (gestures.move(point, slop)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        if (gestures.move(point, slop)) haptics.performHapticFeedback(MenuHoverTick)
                         if (gestures.dragging) {
                             val rect = gestures.listRect
                             val edge = 64.dp.toPx()

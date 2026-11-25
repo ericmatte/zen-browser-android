@@ -10,7 +10,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.zen.android.browser.ActivityBridge
@@ -54,7 +56,11 @@ class MainActivity : ComponentActivity(), ActivityBridge {
             } || vm.privateMode
             val spaceAccent = vm.space(vm.activeSpace)?.theme.accent()
             ZenTheme(dark = dark, accent = spaceAccent ?: systemAccent()) {
-                BrowserScreen(vm, dark)
+                val prefs by vm.settings.state.collectAsStateWithLifecycle()
+                val haptics = LocalHapticFeedback.current
+                CompositionLocalProvider(LocalHapticFeedback provides if (prefs.haptics) haptics else NoHaptics) {
+                    BrowserScreen(vm, dark)
+                }
             }
         }
     }

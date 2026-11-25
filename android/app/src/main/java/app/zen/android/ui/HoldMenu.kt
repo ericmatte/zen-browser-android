@@ -63,6 +63,14 @@ class MenuAction(val icon: String, val label: String, val destructive: Boolean =
 
 val DestructiveRed = Color(0xFFE5484D)
 
+/** The tick played when a held finger reaches another menu entry; text-handle ticks play on every Pixel motor. */
+val MenuHoverTick = HapticFeedbackType.TextHandleMove
+
+/** Stands in for the system haptics when the user turned haptic feedback off. */
+object NoHaptics : HapticFeedback {
+    override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
+}
+
 /**
  * The iOS menu gesture shared by every menu: rows register where they are, a
  * finger that keeps pressing after the menu appears highlights the row under
@@ -110,7 +118,7 @@ suspend fun AwaitPointerEventScope.followHeldFinger(
         val point = origin() + change.position
         if (start == null) start = point
         if ((point - start).getDistance() > slop) moved = true
-        if (select.hover(point)) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        if (select.hover(point)) haptics.performHapticFeedback(MenuHoverTick)
         if (!change.pressed) break
     }
     return moved

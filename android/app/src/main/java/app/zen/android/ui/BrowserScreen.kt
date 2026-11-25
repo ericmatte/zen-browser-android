@@ -42,7 +42,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -219,10 +218,6 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
             }
 
             if (!vm.fullScreen) {
-                // The edge strip overrides Android's back swipe, so it exists only while the page itself is on screen.
-                val pageOnScreen = !drawer.isOpen && !vm.showSettings && !vm.showLibrary && !vm.launcherOpen &&
-                    vm.loginSession == null && vm.glance == null && vm.contextMenu == null && !menu.open
-                if (pageOnScreen) EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
                 LauncherBackdrop(vm)
                 BottomChrome(
                     vm = vm,
@@ -538,24 +533,6 @@ fun barBottomMargin(): androidx.compose.ui.unit.Dp {
 fun Color.toArgbInt(): Int = android.graphics.Color.argb(
     (alpha * 255).toInt(), (red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(),
 )
-
-/** Android honours at most 200dp of back-gesture exclusion per screen edge; anything taller is ignored. */
-private val EdgeSwipeHeight = 200.dp
-
-@Composable
-private fun EdgeSwipe(drawer: DrawerController, modifier: Modifier) {
-    Box(
-        modifier
-            .width(24.dp)
-            .height(EdgeSwipeHeight)
-            .systemGestureExclusion()
-            .draggable(
-                orientation = Orientation.Horizontal,
-                state = rememberDraggableState { drawer.dragBy(it) },
-                onDragStopped = { drawer.settle(it) },
-            ),
-    )
-}
 
 /** Frosted, translucent surface used by the floating bar. */
 @Composable

@@ -125,6 +125,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         private set
     var canGoBack by mutableStateOf(false)
         private set
+    var canGoForward by mutableStateOf(false)
+        private set
     var loginSession by mutableStateOf<GeckoSession?>(null)
         private set
     var showSettings by mutableStateOf(false)
@@ -157,6 +159,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private val titles = mutableMapOf<String, String>()
     private val urls = mutableMapOf<String, String>()
     private val backHistory = mutableMapOf<String, Boolean>()
+    private val forwardHistory = mutableMapOf<String, Boolean>()
     private var lastScrollY = 0
     private var scrollSettle: Job? = null
     private var pendingLogin: PendingLogin? = null
@@ -249,6 +252,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         recentIds.remove(tabId)
         recentIds.addFirst(tabId)
         canGoBack = backHistory[tabId] == true
+        canGoForward = forwardHistory[tabId] == true
         loading = tabId in loadingTabs
         chromeVisible = true
         lastScrollY = 0
@@ -272,6 +276,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         url = ""
         title = ""
         canGoBack = false
+        canGoForward = false
         loading = false
         progress = 100
         chromeVisible = true
@@ -476,6 +481,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         urls.remove(tabId)
         titles.remove(tabId)
         backHistory.remove(tabId)
+        forwardHistory.remove(tabId)
     }
 
     private fun closeTabs(ids: List<String>) {
@@ -824,6 +830,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     override fun onCanGoBack(tabId: String, canGoBack: Boolean) {
         backHistory[tabId] = canGoBack
         if (tabId == activeTab) this.canGoBack = canGoBack
+    }
+
+    override fun onCanGoForward(tabId: String, canGoForward: Boolean) {
+        forwardHistory[tabId] = canGoForward
+        if (tabId == activeTab) this.canGoForward = canGoForward
     }
 
     override fun onScroll(tabId: String, scrollY: Int) {
