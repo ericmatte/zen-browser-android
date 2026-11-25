@@ -97,7 +97,7 @@ fun SwipeRow(
     val isOpen = group.open == key
 
     LaunchedEffect(isOpen) {
-        if (!isOpen && offset.targetValue != 0f) offset.animateTo(0f, settle)
+        if (!isOpen && offset.targetValue != 0f) scope.launch { offset.animateTo(0f, settle) }
     }
 
     Box(
@@ -110,29 +110,23 @@ fun SwipeRow(
                 state = rememberDraggableState { dx ->
                     scope.launch { offset.snapTo((offset.value + dx).coerceIn(-width.toFloat(), width.toFloat())) }
                 },
+                // Settling runs in the row's own scope: the drag's coroutine is cancelled when the row recomposes
+                // (it does, as it opens), which used to leave the row stuck between open and closed.
                 onDragStopped = { velocity ->
                     val outcome = SwipeSettle.decide(
                         offset.value, velocity, width.toFloat(), revealPx, wasRevealed,
                         canReveal = reveal != null, canCommitStart = commitStart != null, canCommitEnd = commitEnd != null,
                     )
+                    val target = if (outcome == SwipeOutcome.REVEAL) -revealPx else 0f
+                    scope.launch { offset.animateTo(target, settle) }
                     when (outcome) {
-                        SwipeOutcome.REVEAL -> {
-                            group.open = key
-                            offset.animateTo(-revealPx, settle)
-                        }
+                        SwipeOutcome.REVEAL -> group.open = key
                         SwipeOutcome.COMMIT_START -> {
-                            if (isOpen) group.open = null
-                            commitStart?.run?.invoke()
-                            offset.animateTo(0f, settle)
-                        }
-                        SwipeOutcome.COMMIT_END -> {
-                            commitEnd?.run?.invoke()
-                            offset.animateTo(0f, settle)
-                        }
-                        SwipeOutcome.CLOSE -> {
                             if (group.open == key) group.open = null
-                            offset.animateTo(0f, settle)
+                            commitStart?.run?.invoke()
                         }
+                        SwipeOutcome.COMMIT_END -> commitEnd?.run?.invoke()
+                        SwipeOutcome.CLOSE -> if (group.open == key) group.open = null
                     }
                 },
             ),

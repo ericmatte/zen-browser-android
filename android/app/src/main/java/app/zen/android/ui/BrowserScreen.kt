@@ -534,6 +534,13 @@ fun Color.toArgbInt(): Int = android.graphics.Color.argb(
     (alpha * 255).toInt(), (red * 255).toInt(), (green * 255).toInt(), (blue * 255).toInt(),
 )
 
+/** The colour at the top edge of the glass bar, shared by panels that join it. */
+@Composable
+fun glassTopColor(tint: Color?): Color {
+    val base = tint ?: MaterialTheme.colorScheme.surface
+    return lerp(base, Color.White, if (base.isLight()) 0.4f else 0.06f)
+}
+
 /** Frosted, translucent surface used by the floating bar. */
 @Composable
 fun GlassSurface(
@@ -547,9 +554,7 @@ fun GlassSurface(
     val base = tint ?: MaterialTheme.colorScheme.surface
     val top = 0.92f + 0.08f * solidity
     val bottom = 0.86f + 0.14f * solidity
-    val fill = Brush.verticalGradient(
-        listOf(lerp(base, Color.White, if (dark) 0.06f else 0.4f).copy(alpha = top), base.copy(alpha = bottom))
-    )
+    val fill = Brush.verticalGradient(listOf(glassTopColor(tint).copy(alpha = top), base.copy(alpha = bottom)))
     val rim = Brush.verticalGradient(
         listOf(Color.White.copy(alpha = if (dark) 0.22f else 0.7f), Color.White.copy(alpha = if (dark) 0.04f else 0.15f))
     )

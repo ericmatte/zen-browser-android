@@ -111,6 +111,9 @@ import app.zen.android.browser.UrlInput
 import app.zen.android.sync.TabItem
 import kotlin.math.abs
 
+/** How far the suggestions panel reaches down behind the bar. */
+val SuggestionsOverlap = 28.dp
+
 /** Height of the bar while typing: a little taller than at rest, like desktop's open urlbar. */
 val EditBarHeight = 64.dp
 
@@ -207,7 +210,7 @@ fun BottomChrome(
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                AddressBar(vm, typing, searching, finding, if (landscape) 1f else dock, typing && vm.suggestions.isNotEmpty(), ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
+                AddressBar(vm, typing, searching, finding, if (landscape) 1f else dock, ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
             }
         }
     }
@@ -220,7 +223,6 @@ private fun AddressBar(
     searching: Boolean,
     finding: Boolean,
     dock: Float,
-    underSuggestions: Boolean,
     onCancel: () -> Unit,
     onEdit: () -> Unit,
     onSidebar: () -> Unit,
@@ -244,9 +246,7 @@ private fun AddressBar(
 
     val top = lerp(BarMargin, 0.dp, dock)
     val bottom = lerp(barBottomMargin(), 0.dp, dock)
-    // Joined to the suggestions panel above it, the bar's top corners go square so the two read as one sheet.
-    val join by animateFloatAsState(if (underSuggestions) 1f else 0f, tween(160), label = "join")
-    val topCorner = lerp(lerp(26.dp, 14.dp, dock), 0.dp, join)
+    val topCorner = lerp(26.dp, 14.dp, dock)
     val bottomCorner = lerp(26.dp, 0.dp, dock)
 
     GlassSurface(
@@ -761,16 +761,18 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
 
 @Composable
 private fun SuggestionsPanel(vm: BrowserViewModel, inNewTab: Boolean, modifier: Modifier, onDone: () -> Unit) {
+    // The panel runs on under the bar, in the bar's own colour, so the two read as one sheet while the
+    // bar keeps its rounded corners.
     Surface(
-        modifier,
+        modifier.offset(y = SuggestionsOverlap),
         shape = RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp),
-        color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = glassTopColor(if (vm.privateMode) PrivateTint else null),
         contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
         shadowElevation = 12.dp,
     ) {
         // Best match sits at the bottom, right above the bar and the thumb.
         val reveal = remember { RevealGroup() }
-        Column(Modifier.closesReveal(reveal).padding(vertical = 6.dp)) {
+        Column(Modifier.closesReveal(reveal).padding(top = 6.dp, bottom = 6.dp + SuggestionsOverlap)) {
             vm.suggestions.asReversed().forEach { suggestion ->
                 key(suggestion.dismissKey) {
                     SwipeRow(

@@ -463,9 +463,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
         val id = SpacesState.newTabId()
         rememberOpenedHere(id)
+        // Shown at once: waiting for the stored edit left a moment with no page, and the home search's
+        // fallback would load the space's first tab in its place.
+        selectTab(id, target)
         viewModelScope.launch {
             repository.edit(LocalEdit.OpenTab(id, space, target, UrlInput.display(target)))
-            selectTab(id, target)
             repository.sync()
         }
     }
