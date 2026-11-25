@@ -65,18 +65,21 @@ sealed interface ZenIcon {
 }
 
 /** The gradient a space uses on desktop (ZenGradientGenerator.getTheme). Colors are ARGB, primary first. */
-data class SpaceTheme(val colors: List<Long>, val opacity: Float, val custom: Boolean = false) {
+data class SpaceTheme(val colors: List<Long>, val opacity: Float, val custom: Boolean = false, val dominant: Long = colors.first()) {
     companion object {
         fun parse(json: JSONObject?): SpaceTheme? {
             val list = json?.optJSONArray("gradientColors") ?: return null
-            val dots = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
+            val raw = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
                 .mapNotNull { dot -> parseColor(dot.opt("c"))?.let { Triple(it, dot.optBoolean("isPrimary"), dot.optBoolean("isCustom")) } }
-                .sortedByDescending { it.second }
-            if (dots.isEmpty()) return null
+            if (raw.isEmpty()) return null
+            // ZenGradientGenerator.getPrimaryColor: the primary dot, else the middle one.
+            val dominant = (raw.firstOrNull { it.second } ?: raw[raw.size / 2]).first
+            val dots = raw.sortedByDescending { it.second }
             return SpaceTheme(
                 colors = dots.map { it.first },
                 opacity = json.optDouble("opacity", 0.5).toFloat().coerceIn(0f, 1f),
                 custom = dots.any { it.third },
+                dominant = dominant,
             )
         }
 
@@ -142,6 +145,14 @@ sealed interface LocalEdit {
             .put("before", beforeId ?: JSONObject.NULL).put("pinned", pinned ?: JSONObject.NULL)
     }
 
+    data class RenameSpace(val uuid: String, val name: String) : LocalEdit {
+        override fun toJson() = JSONObject().put("op", "renameSpace").put("uuid", uuid).put("name", name)
+    }
+
+    data class RenameFolder(val folderId: String, val name: String) : LocalEdit {
+        override fun toJson() = JSONObject().put("op", "renameFolder").put("folderId", folderId).put("name", name)
+    }
+
     companion object {
         /** Builds the move for [itemId] once the sidebar shows [pinnedIds] above the separator and [regularIds] below. */
         fun placing(spaceUuid: String, itemId: String, pinnedIds: List<String>, regularIds: List<String>): MoveItem {
@@ -153,6 +164,8 @@ sealed interface LocalEdit {
             "open" -> OpenTab(json.getString("tabId"), json.getString("space"), json.getString("url"), json.getString("title"))
             "update" -> UpdateTab(json.getString("tabId"), json.getString("url"), json.getString("title"))
             "close" -> CloseTab(json.getString("tabId"))
+            "renameSpace" -> RenameSpace(json.getString("uuid"), json.getString("name"))
+            "renameFolder" -> RenameFolder(json.getString("folderId"), json.getString("name"))
             "move" -> MoveItem(
                 json.getString("itemId"),
                 json.getString("parent"),
@@ -283,6 +296,8 @@ class SpacesState(val records: Map<String, JSONObject> = emptyMap()) {
                     next.remove(edit.tabId)
                     changed[edit.tabId] = null
                 }
+                is LocalEdit.RenameSpace -> rename(next, changed, edit.uuid, Kind.SPACE, edit.name)
+                is LocalEdit.RenameFolder -> rename(next, changed, edit.folderId, Kind.FOLDER, edit.name)
                 is LocalEdit.MoveItem -> {
                     val item = next[edit.itemId] ?: continue
                     val target = next[edit.parentId] ?: continue
@@ -310,6 +325,15 @@ class SpacesState(val records: Map<String, JSONObject> = emptyMap()) {
             }
         }
         return SpacesState(next) to changed
+    }
+
+    private fun rename(next: MutableMap<String, JSONObject>, changed: MutableMap<String, JSONObject?>, id: String, kind: String, name: String) {
+        val rec = next[id]?.takeIf { it.optString("kind") == kind } ?: return
+        val d = rec.getJSONObject("data")
+        val clean = name.trim()
+        if (clean.isEmpty() || d.optString("name") == clean) return
+        d.put("name", clean)
+        changed[id] = rec
     }
 
     fun toJson(): JSONObject = JSONObject().also { out -> records.forEach { (k, v) -> out.put(k, v) } }

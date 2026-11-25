@@ -69,6 +69,41 @@ object Gecko {
             }, { null })
     }
 
+    /** Applies the privacy and display settings that desktop exposes in about:preferences. */
+    fun apply(context: Context, prefs: app.zen.android.ui.Preferences) {
+        val r = runtime(context)
+        val strict = prefs.tracking == app.zen.android.ui.TrackingProtection.STRICT
+        r.settings.contentBlocking.apply {
+            setEnhancedTrackingProtectionLevel(if (strict) ContentBlocking.EtpLevel.STRICT else ContentBlocking.EtpLevel.DEFAULT)
+            setAntiTracking(if (strict) ContentBlocking.AntiTracking.STRICT else ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
+            setStrictSocialTrackingProtection(strict)
+            setQueryParameterStrippingEnabled(prefs.stripTrackingParams)
+            setQueryParameterStrippingPrivateBrowsingEnabled(true)
+        }
+        r.settings.setGlobalPrivacyControl(prefs.globalPrivacyControl)
+        r.settings.setAllowInsecureConnections(
+            when (prefs.httpsOnly) {
+                app.zen.android.ui.HttpsOnly.OFF -> GeckoRuntimeSettings.ALLOW_ALL
+                app.zen.android.ui.HttpsOnly.PRIVATE -> GeckoRuntimeSettings.HTTPS_ONLY_PRIVATE
+                app.zen.android.ui.HttpsOnly.ALL -> GeckoRuntimeSettings.HTTPS_ONLY
+            }
+        )
+        r.settings.setTrustedRecursiveResolverMode(
+            when (prefs.dns) {
+                app.zen.android.ui.DnsOverHttps.OFF -> GeckoRuntimeSettings.TRR_MODE_OFF
+                app.zen.android.ui.DnsOverHttps.DEFAULT -> GeckoRuntimeSettings.TRR_MODE_FIRST
+                app.zen.android.ui.DnsOverHttps.MAX -> GeckoRuntimeSettings.TRR_MODE_ONLY
+            }
+        )
+        if (prefs.dns != app.zen.android.ui.DnsOverHttps.OFF) r.settings.setTrustedRecursiveResolverUri(DOH_URI)
+        r.settings.setAutomaticFontSizeAdjustment(false)
+        r.settings.setFontSizeFactor(prefs.textScale)
+        r.settings.setForceUserScalableEnabled(prefs.forceZoom)
+    }
+
+    /** Firefox's default DoH provider. */
+    private const val DOH_URI = "https://mozilla.cloudflare-dns.com/dns-query"
+
     fun setColorScheme(context: Context, scheme: Int) {
         runtime(context).settings.preferredColorScheme = scheme
     }

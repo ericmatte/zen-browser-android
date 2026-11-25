@@ -16,6 +16,7 @@ object FxaConfig {
     const val CONTENT_URL = "https://accounts.firefox.com"
     const val AUTH_API = "https://api.accounts.firefox.com/v1"
     const val TOKEN_SERVER = "https://token.services.mozilla.com/1.0/sync/1.5"
+    const val PROFILE_API = "https://profile.accounts.firefox.com/v1"
 }
 
 data class SyncCredentials(
@@ -74,12 +75,20 @@ class FxaAuth(private val http: HttpTransport = UrlConnectionTransport) {
         return credentialsFrom(refresh, pending.keys.decrypt(keysJwe))
     }
 
-    fun accessToken(credentials: SyncCredentials): AccessToken {
+    /** The signed-in account's email, read with a short-lived `profile` token. */
+    fun email(credentials: SyncCredentials): String? {
+        val token = accessToken(credentials, scope = "profile").token
+        val res = http.request("GET", "${FxaConfig.PROFILE_API}/profile", mapOf("Authorization" to "Bearer $token"), null)
+        if (!res.ok) throw HttpException(res.status, res.body)
+        return JSONObject(res.body).optString("email").ifEmpty { null }
+    }
+
+    fun accessToken(credentials: SyncCredentials, scope: String = OLDSYNC_SCOPE): AccessToken {
         val body = JSONObject()
             .put("client_id", FxaConfig.CLIENT_ID)
             .put("grant_type", "refresh_token")
             .put("refresh_token", credentials.refreshToken)
-            .put("scope", OLDSYNC_SCOPE)
+            .put("scope", scope)
         val json = postJson("${FxaConfig.AUTH_API}/oauth/token", body)
         return AccessToken(
             json.getString("access_token"),

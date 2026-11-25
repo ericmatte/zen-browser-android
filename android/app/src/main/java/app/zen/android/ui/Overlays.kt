@@ -1,11 +1,6 @@
 package app.zen.android.ui
 
 import androidx.activity.compose.BackHandler
-import android.app.role.RoleManager
-import android.content.Intent
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -20,12 +15,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,7 +27,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -47,7 +39,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,22 +53,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.zen.android.BuildConfig
 import app.zen.android.browser.PageRequest
-import app.zen.android.browser.SearchEngine
 import app.zen.android.browser.UrlInput
-import app.zen.android.sync.SyncStatus
 import kotlinx.coroutines.delay
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 
 @Composable
-fun BoxScope.Overlays(vm: BrowserViewModel) {
+fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean) {
     vm.glance?.let { GlanceOverlay(vm, it) }
 
     vm.loginSession?.let { login ->
@@ -100,7 +86,15 @@ fun BoxScope.Overlays(vm: BrowserViewModel) {
         enter = slideInHorizontally { it } + fadeIn(),
         exit = slideOutHorizontally { it } + fadeOut(),
     ) {
-        SettingsScreen(vm)
+        SettingsScreen(vm, dark)
+    }
+
+    AnimatedVisibility(
+        vm.showLibrary,
+        enter = slideInHorizontally { -it } + fadeIn(),
+        exit = slideOutHorizontally { -it } + fadeOut(),
+    ) {
+        LibraryScreen(vm, dark)
     }
 
     vm.requests.current?.let { PageDialog(it, onDone = vm.requests::resolved) }
@@ -130,7 +124,11 @@ fun SessionView(session: GeckoSession, modifier: Modifier, texture: Boolean = fa
         modifier = modifier,
         factory = { context ->
             // A TextureView honours Compose clipping and scaling (rounded, animated cards); a SurfaceView does not.
-            GeckoView(context).apply { if (texture) setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW) }
+            GeckoView(context).apply {
+                if (texture) setViewBackend(GeckoView.BACKEND_TEXTURE_VIEW)
+                setAutofillEnabled(true)
+                importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
+            }
         },
         update = { view ->
             if (view.session !== session) {
@@ -233,7 +231,7 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel) {
                 )
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 if (link != null) {
-                    MenuRow("open", "Glance") { act { vm.openGlance(link) } }
+                    if (vm.settings.state.value.glance) MenuRow("open", "Glance") { act { vm.openGlance(link) } }
                     if (!vm.privateMode) MenuRow("plus", "Open in new tab") { act { vm.newTab(link) } }
                     MenuRow("privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
                     MenuRow("link", "Copy link") {
@@ -290,13 +288,29 @@ private fun PageDialog(request: PageRequest, onDone: () -> Unit) {
             confirmButton = { TextButton(onClick = { finish { request.answer(true) } }) { Text("OK") } },
             dismissButton = { TextButton(onClick = { finish { request.answer(false) } }) { Text("Cancel") } },
         )
-        is PageRequest.Permission -> AlertDialog(
-            onDismissRequest = { finish(request::cancel) },
-            title = { Text(request.title) },
-            text = { Text(request.message) },
-            confirmButton = { TextButton(onClick = { finish { request.answer(true) } }) { Text("Allow") } },
-            dismissButton = { TextButton(onClick = { finish { request.answer(false) } }) { Text("Block") } },
-        )
+        is PageRequest.Permission -> {
+            var remember by remember(request) { mutableStateOf(true) }
+            AlertDialog(
+                onDismissRequest = { finish(request::cancel) },
+                title = { Text(request.title) },
+                text = {
+                    Column {
+                        Text(request.message)
+                        if (request.canRemember) {
+                            Row(
+                                Modifier.padding(top = 12.dp).clip(RoundedCornerShape(8.dp)).clickable { remember = !remember },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(remember, { remember = it })
+                                Text("Remember this decision")
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { finish { request.answer(true, remember) } }) { Text("Allow") } },
+                dismissButton = { TextButton(onClick = { finish { request.answer(false, remember) } }) { Text("Block") } },
+            )
+        }
         is PageRequest.TextInput -> {
             var text by remember(request) { mutableStateOf(request.initial) }
             AlertDialog(
@@ -354,185 +368,5 @@ private fun PageDialog(request: PageRequest, onDone: () -> Unit) {
                 dismissButton = { TextButton(onClick = { finish(request::cancel) }) { Text("Cancel") } },
             )
         }
-    }
-}
-
-@Composable
-private fun SettingsScreen(vm: BrowserViewModel) {
-    BackHandler { vm.showSettings = false }
-    val prefs by vm.settings.state.collectAsStateWithLifecycle()
-    val status by vm.status.collectAsStateWithLifecycle()
-    var confirmClear by remember { mutableStateOf(false) }
-
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { vm.showSettings = false }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
-                Text("Settings", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Section("Sync") {
-                    val label = when (val s = status) {
-                        SyncStatus.SignedOut -> "Not signed in"
-                        SyncStatus.Idle -> "Signed in · spaces are in sync"
-                        SyncStatus.Syncing -> "Syncing…"
-                        is SyncStatus.Failed -> "Sync error: ${s.message}"
-                    }
-                    SettingRow("Mozilla account", label)
-                    if (status == SyncStatus.SignedOut) {
-                        ActionRow("Sign in") {
-                            vm.showSettings = false
-                            vm.beginLogin()
-                        }
-                    } else {
-                        ActionRow("Sync now") { vm.syncNow() }
-                        ActionRow("Sign out", destructive = true) { vm.signOut() }
-                    }
-                }
-                Section("General") {
-                    DefaultBrowserRow()
-                }
-                Section("Search") {
-                    SearchEngine.entries.forEach { engine ->
-                        Row(
-                            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                                .clickable { vm.settings.update { it.copy(searchEngine = engine) } }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(prefs.searchEngine == engine, null)
-                            Text(engine.label, Modifier.padding(start = 8.dp))
-                        }
-                    }
-                }
-                Section("Appearance") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { mode ->
-                            val selected = prefs.themeMode == mode
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .height(44.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceContainerHigh)
-                                    .clickable {
-                                        vm.settings.update { it.copy(themeMode = mode) }
-                                        vm.applyThemeMode(mode)
-                                    },
-                                contentAlignment = Alignment.Center,
-                            ) { Text(mode.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    SwitchRow("Match status bar to website", "Tints the top of the screen with the page colour", prefs.tintStatusBar) { on ->
-                        vm.settings.update { it.copy(tintStatusBar = on) }
-                        if (!on) vm.pageTopColor = null else vm.requestCapture()
-                    }
-                }
-                Section("Privacy") {
-                    SettingRow("Tracking protection", "Standard · trackers and cross-site cookies blocked")
-                    ActionRow("Clear browsing data", destructive = true) { confirmClear = true }
-                    ActionRow("Close all private tabs") { vm.closePrivateTabs() }
-                }
-                Section("About") {
-                    SettingRow("Zen for Android", "Version ${BuildConfig.VERSION_NAME} · GeckoView ${org.mozilla.geckoview.BuildConfig.MOZILLA_VERSION}")
-                    ActionRow("Source code") {
-                        vm.showSettings = false
-                        vm.newTab("https://github.com/ericmatte/zen-browser-desktop")
-                    }
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text("Clear browsing data?") },
-            text = { Text("Cookies, cache and site data are removed. Your synced spaces and tabs stay.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmClear = false
-                    vm.clearBrowsingData()
-                }) { Text("Clear") }
-            },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
-        )
-    }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Text(
-        title,
-        Modifier.padding(start = 6.dp, top = 22.dp, bottom = 8.dp),
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 14.dp, vertical = 8.dp),
-    ) { content() }
-}
-
-/**
- * Asks Android for the browser role. When the user already declined twice the
- * system answers instantly without a dialog, so we fall back to the default
- * apps screen.
- */
-@Composable
-private fun DefaultBrowserRow() {
-    val context = LocalContext.current
-    val roles = remember { context.getSystemService(RoleManager::class.java) }
-    var isDefault by remember { mutableStateOf(roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true) }
-    var askedAt by remember { mutableStateOf(0L) }
-    val request = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        isDefault = roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true
-        if (!isDefault && System.currentTimeMillis() - askedAt < 400) {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-        }
-    }
-    if (isDefault) {
-        SettingRow("Default browser", "Zen opens the links you tap in other apps")
-    } else {
-        ActionRow("Set Zen as default browser") {
-            askedAt = System.currentTimeMillis()
-            if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
-                request.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
-            } else {
-                context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-            }
-        }
-    }
-}
-
-@Composable
-private fun SettingRow(title: String, subtitle: String) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun ActionRow(title: String, destructive: Boolean = false, onClick: () -> Unit) {
-    Text(
-        title,
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 12.dp),
-        color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-        style = MaterialTheme.typography.bodyLarge,
-    )
-}
-
-@Composable
-private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked, onChange)
     }
 }

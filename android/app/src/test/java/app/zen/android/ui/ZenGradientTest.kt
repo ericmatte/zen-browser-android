@@ -43,4 +43,23 @@ class ZenGradientTest {
         assertEquals(12, spec.stops.size)
         assertEquals(spec.stops[9].second, spec.stops[11].second)
     }
+
+    @Test
+    fun `dark saturated themes get light text, like desktop`() {
+        val chrome = ZenGradient.chrome(SpaceTheme(listOf(0xFF1E1E5AL, 0xFF5A1E3CL), 0.8f), dark = false)
+        assertEquals(true, chrome.lightText)
+        assertEquals(0xE6L, chrome.text ushr 24)
+    }
+
+    @Test
+    fun `pale themes in light mode get dark text`() {
+        val chrome = ZenGradient.chrome(SpaceTheme(listOf(0xFFF0E8D0L), 0.5f), dark = false)
+        assertEquals(false, chrome.lightText)
+    }
+
+    @Test
+    fun `spaces without a theme use the blank window palette`() {
+        assertEquals(ZenGradient.spec(ZenGradient.blankTheme(true), true), ZenGradient.spec(null, true))
+        assertEquals(true, ZenGradient.chrome(null, dark = true).lightText)
+    }
 }

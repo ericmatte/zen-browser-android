@@ -54,7 +54,11 @@ const val LOGIN_TAB = "__login__"
 const val GLANCE_TAB = "__glance__"
 
 /** Tabs that exist only on this phone: never written to the synced spaces collection. */
-private fun isLocalOnly(tabId: String) = tabId == SCRATCH_TAB || tabId == LOGIN_TAB || tabId.endsWith(GLANCE_TAB) || isPrivateTab(tabId)
+const val ESSENTIAL_PREFIX = "ess:"
+const val MAX_ESSENTIALS = 12
+
+private fun isLocalOnly(tabId: String) =
+    tabId == SCRATCH_TAB || tabId == LOGIN_TAB || tabId.endsWith(GLANCE_TAB) || isPrivateTab(tabId) || tabId.startsWith(ESSENTIAL_PREFIX)
 
 sealed interface Suggestion {
     data class OpenTab(val tab: TabItem) : Suggestion
@@ -69,13 +73,18 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         credentialStore = FileCredentialStore(File(app.noBackupFilesDir, "fxa.json")),
     )
     val settings = AppSettings(app)
-    val requests = PageRequests(app)
+    val requests = PageRequests(app) { settings.state.value }
     private val visits = History(File(app.filesDir, "history.json"))
     private var saveVisits: Job? = null
     private val auth = FxaAuth()
     private val sessions = TabSessions(app, this, requests, requests)
 
     val spaces: StateFlow<SpacesState> = repository.view
+    val essentials: StateFlow<List<TabItem>> = settings.essentials
+
+    var accountEmail by mutableStateOf(settings.string("accountEmail"))
+        private set
+    var showLibrary by mutableStateOf(false)
     val status: StateFlow<SyncStatus> = repository.status
 
     var ready by mutableStateOf(false)
@@ -144,10 +153,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     private val home get() = settings.state.value.searchEngine.home
 
+    private val openedHere = settings.string("openedHere")?.split(',')?.filter { it.isNotEmpty() }?.toMutableSet() ?: mutableSetOf()
+    private val lastSeen = mutableMapOf<String, Long>()
+
     init {
         applyThemeMode(settings.state.value.themeMode)
+        viewModelScope.launch { settings.state.collect { Gecko.apply(getApplication(), it) } }
         viewModelScope.launch {
             repository.load()
+            refreshEmail()
             val first = repository.view.value.spaces().firstOrNull()
             activeSpace = first?.uuid
             val tab = first?.tabs?.firstOrNull()
@@ -161,7 +175,34 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                 else -> launcherOpen = true
             }
             startSyncLoop()
+            while (isActive) {
+                delay(10 * 60_000)
+                cleanUpIdleTabs()
+            }
         }
+    }
+
+    /** Closes unpinned tabs the phone opened once they sit unseen longer than the chosen delay. */
+    private fun cleanUpIdleTabs() {
+        val hours = settings.state.value.tabCleanup.hours ?: return
+        val unpinned = repository.view.value.spaces().flatMap { it.regularTabs }.map { it.id }
+        val expired = app.zen.android.browser.TabCleanupRule.expired(unpinned, openedHere, lastSeen, activeTab, System.currentTimeMillis(), hours * 3_600_000)
+        closeTabs(expired)
+    }
+
+    private fun refreshEmail() {
+        if (repository.status.value == SyncStatus.SignedOut) return
+        viewModelScope.launch {
+            val creds = withContext(Dispatchers.IO) { FileCredentialStore(File(getApplication<Application>().noBackupFilesDir, "fxa.json")).load() } ?: return@launch
+            val email = withContext(Dispatchers.IO) { runCatching { auth.email(creds) }.getOrNull() } ?: return@launch
+            accountEmail = email
+            settings.putString("accountEmail", email)
+        }
+    }
+
+    private fun rememberOpenedHere(id: String) {
+        openedHere += id
+        settings.putString("openedHere", openedHere.joinToString(","))
     }
 
     fun startSyncLoop() {
@@ -169,7 +210,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         syncLoop = viewModelScope.launch {
             while (isActive) {
                 repository.sync()
-                delay(60_000)
+                // Desktop pushes changes within minutes; this keeps the phone fresh without draining the battery.
+                delay(5 * 60_000)
             }
         }
     }
@@ -185,6 +227,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun isDesktopMode() = sessions.isDesktopMode(activeTab)
 
     fun selectTab(tabId: String, tabUrl: String) {
+        val now = System.currentTimeMillis()
+        lastSeen[activeTab] = now
+        lastSeen[tabId] = now
         val s = sessions.obtain(tabId, urls[tabId] ?: tabUrl)
         sessions.setActive(tabId)
         activeTab = tabId
@@ -284,6 +329,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             return
         }
         val id = SpacesState.newTabId()
+        rememberOpenedHere(id)
         viewModelScope.launch {
             repository.edit(LocalEdit.OpenTab(id, space, target, UrlInput.display(target)))
             selectTab(id, target)
@@ -357,16 +403,77 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         viewModelScope.launch {
             synced.forEach { repository.edit(LocalEdit.CloseTab(it)) }
             if (activeTab in ids && !isPrivateTab(activeTab)) {
-                val next = space(activeSpace)?.tabs?.firstOrNull()
+                val recent = if (settings.state.value.selectRecentOnClose) recentTabs(1).firstOrNull() else null
+                val next = recent ?: space(activeSpace)?.tabs?.firstOrNull()
                 if (next != null) selectTab(next) else selectTab(SCRATCH_TAB, home)
             }
             if (synced.isNotEmpty()) repository.sync()
         }
     }
 
-    fun move(edit: LocalEdit.MoveItem) = viewModelScope.launch {
+    fun move(edit: LocalEdit.MoveItem) = edit(edit)
+
+    private fun edit(edit: LocalEdit) = viewModelScope.launch {
         repository.edit(edit)
         repository.sync()
+    }
+
+    fun renameSpace(uuid: String, name: String) = edit(LocalEdit.RenameSpace(uuid, name))
+
+    fun renameFolder(folderId: String, name: String) = edit(LocalEdit.RenameFolder(folderId, name))
+
+    /** Pinned tabs go last in the pinned section; unpinned ones go first among the temporary tabs, like desktop. */
+    fun setPinned(tab: TabItem, pinned: Boolean) {
+        val space = repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tab.id } } ?: return
+        val firstRegular = space.regularTabs.firstOrNull { it.id != tab.id }?.id
+        edit(LocalEdit.MoveItem(tab.id, space.uuid, firstRegular, pinned))
+    }
+
+    fun essentialsFull() = essentials.value.size >= MAX_ESSENTIALS
+
+    /** Moves a synced tab into this phone's essentials (it closes in the space, as desktop does). */
+    fun addEssential(tab: TabItem) {
+        if (essentialsFull()) {
+            message = "Essentials are full ($MAX_ESSENTIALS)"
+            return
+        }
+        val essential = TabItem(ESSENTIAL_PREFIX + UUID.randomUUID(), urls[tab.id] ?: tab.url, titles[tab.id] ?: tab.title, pinned = true)
+        settings.setEssentials(essentials.value + essential)
+        val wasActive = activeTab == tab.id
+        closeTabs(listOf(tab.id))
+        if (wasActive) selectTab(essential)
+    }
+
+    fun removeEssential(id: String) {
+        settings.setEssentials(essentials.value.filter { it.id != id })
+        forget(id)
+    }
+
+    /** Drops an essential back into a space as a new synced tab. */
+    fun essentialToSpace(essential: TabItem, spaceUuid: String) {
+        val wasActive = activeTab == essential.id
+        val url = urls[essential.id] ?: essential.url
+        val title = titles[essential.id] ?: essential.title
+        removeEssential(essential.id)
+        val id = SpacesState.newTabId()
+        rememberOpenedHere(id)
+        viewModelScope.launch {
+            repository.edit(LocalEdit.OpenTab(id, spaceUuid, url, title))
+            if (wasActive) selectTab(id, url)
+            repository.sync()
+        }
+    }
+
+    fun historyEntries(query: String, since: Long?, sort: app.zen.android.browser.HistorySort) = visits.browse(query, since, sort)
+
+    fun forgetVisit(url: String) {
+        visits.forget(url)
+        persistVisits()
+    }
+
+    fun clearHistorySince(since: Long?) {
+        if (since == null) visits.clear() else visits.clearSince(since)
+        persistVisits()
     }
 
     fun goBack(): Boolean {
@@ -429,16 +536,21 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             suggestions = emptyList()
             return
         }
-        val candidates = if (privateMode) privateTabs.toList() else repository.view.value.spaces().flatMap { it.tabs } + repository.view.value.essentials()
+        val prefs = settings.state.value
+        val candidates = when {
+            !prefs.openTabsInSuggestions -> emptyList()
+            privateMode -> privateTabs.toList()
+            else -> repository.view.value.spaces().flatMap { it.tabs } + essentials.value
+        }
         val openTabs = candidates
             .filter { it.id != activeTab && (it.title.contains(query, true) || it.url.contains(query, true)) }
             .distinctBy { it.id }
             .take(3)
             .map { Suggestion.OpenTab(it) }
         val openUrls = openTabs.map { it.tab.url }.toSet()
-        val visited = if (privateMode) emptyList() else visits.search(query, 4).filter { it.url !in openUrls }.map { Suggestion.Visited(it) }
+        val visited = if (privateMode || !prefs.historyInSuggestions) emptyList() else visits.search(query, 4).filter { it.url !in openUrls }.map { Suggestion.Visited(it) }
         suggestions = openTabs + visited
-        if (privateMode) return
+        if (!prefs.searchSuggestions || (privateMode && !prefs.suggestionsInPrivate)) return
         suggestJob = viewModelScope.launch {
             delay(120)
             val remote = withContext(Dispatchers.IO) {
@@ -475,6 +587,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun signOut() = viewModelScope.launch {
         repository.signOut()
+        accountEmail = null
+        settings.putString("accountEmail", null)
         activeSpace = null
         sessions.closeAll { !isPrivateTab(it) }
         selectTab(SCRATCH_TAB, home)
@@ -514,6 +628,14 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
+    fun clearSitePermissions() {
+        val storage = Gecko.runtime(getApplication()).storageController
+        storage.getAllPermissions().accept { perms ->
+            perms?.forEach { storage.setPermission(it, GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT) }
+            message = "Site permissions reset"
+        }
+    }
+
     fun requestCapture() {
         captureRequest++
     }
@@ -542,6 +664,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             try {
                 val credentials = withContext(Dispatchers.IO) { auth.completeLogin(pending, url) }
                 repository.signIn(credentials)
+                refreshEmail()
                 repository.view.value.spaces().firstOrNull()?.let { activeSpace = it.uuid }
             } catch (e: Exception) {
                 message = "Sign-in failed: ${e.message}"
@@ -586,7 +709,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     override fun onPageLoaded(tabId: String) {
         if (tabId == activeTab) requestCapture()
         if (!isPrivateTab(tabId) && tabId != LOGIN_TAB && !tabId.endsWith(GLANCE_TAB)) {
-            urls[tabId]?.let { visits.record(it, titles[tabId].orEmpty()) }
+            if (settings.state.value.rememberHistory) urls[tabId]?.let { visits.record(it, titles[tabId].orEmpty()) }
             persistVisits()
         }
         if (isLocalOnly(tabId)) return

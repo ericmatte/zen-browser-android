@@ -25,4 +25,23 @@ class PageColorTest {
         val row = IntArray(100) { 0xFF000000.toInt() or (it * 40_000) }
         assertNull(PageColor.dominant(row))
     }
+
+    @Test
+    fun `favicon accent ignores white, black and transparent pixels`() {
+        val orange = 0xFFF57C00.toInt()
+        val icon = IntArray(100) { i ->
+            when {
+                i < 50 -> white
+                i < 60 -> 0xFF000000.toInt()
+                i < 70 -> 0x00000000
+                else -> orange
+            }
+        }
+        assertEquals(orange, PageColor.accent(icon))
+    }
+
+    @Test
+    fun `grey favicons have no accent`() {
+        assertNull(PageColor.accent(IntArray(10) { 0xFF808080.toInt() }))
+    }
 }

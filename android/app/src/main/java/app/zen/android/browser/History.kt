@@ -6,6 +6,9 @@ import java.io.File
 
 data class Visit(val url: String, val title: String, val visits: Int, val lastVisit: Long)
 
+/** The library's history sort options (library-history-sort-*). */
+enum class HistorySort(val label: String) { DATE("By Date"), SITE("By Site"), MOST_VISITED("By Most Visited"), LAST_VISITED("By Last Visited") }
+
 /**
  * Pages visited outside private mode, kept on this device only. Ranking
  * follows the spirit of Firefox's frecency: often and recently visited pages
@@ -42,6 +45,31 @@ class History(private val file: File?, private val limit: Int = 2000) {
             .filter { v -> words.all { w -> v.title.lowercase().contains(w) || v.url.lowercase().contains(w) } }
             .sortedByDescending { score(it, words.first(), now) }
             .take(max)
+    }
+
+    /** Library listing: optional text and time filter, then the chosen sort. */
+    @Synchronized
+    fun browse(query: String, since: Long?, sort: HistorySort): List<Visit> {
+        val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val matches = entries.values.filter { v ->
+            (since == null || v.lastVisit >= since) &&
+                words.all { w -> v.title.lowercase().contains(w) || v.url.lowercase().contains(w) }
+        }
+        return when (sort) {
+            HistorySort.DATE, HistorySort.LAST_VISITED -> matches.sortedByDescending { it.lastVisit }
+            HistorySort.SITE -> matches.sortedWith(compareBy<Visit> { UrlInput.display(it.url) }.thenByDescending { it.lastVisit })
+            HistorySort.MOST_VISITED -> matches.sortedByDescending { it.visits }
+        }
+    }
+
+    @Synchronized
+    fun forget(url: String) {
+        entries.remove(url)
+    }
+
+    @Synchronized
+    fun clearSince(since: Long) {
+        entries.values.removeAll { it.lastVisit >= since }
     }
 
     @Synchronized

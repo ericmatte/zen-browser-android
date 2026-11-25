@@ -5,7 +5,6 @@ import android.graphics.BitmapFactory
 import android.util.Base64
 import android.util.LruCache
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
@@ -161,4 +161,21 @@ fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modif
             }
         }
     }
+}
+
+/** The brand colour of a page's favicon, used to outline a selected essential. */
+@Composable
+fun rememberFaviconAccent(url: String, dataIcon: String?): Color? {
+    val context = LocalContext.current
+    var accent by remember(url, dataIcon) { mutableStateOf<Color?>(null) }
+    LaunchedEffect(url, dataIcon) {
+        val bitmap = Favicons.load(context, url, dataIcon) ?: return@LaunchedEffect
+        accent = withContext(Dispatchers.Default) {
+            val android = bitmap.asAndroidBitmap().let { if (it.config == android.graphics.Bitmap.Config.HARDWARE) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
+            val pixels = IntArray(android.width * android.height)
+            android.getPixels(pixels, 0, android.width, 0, 0, android.width, android.height)
+            app.zen.android.browser.PageColor.accent(pixels)?.let { Color(it) }
+        }
+    }
+    return accent
 }

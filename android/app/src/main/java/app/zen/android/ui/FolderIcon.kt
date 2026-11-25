@@ -39,7 +39,7 @@ private const val BACK_PATH =
 private const val VIEWBOX = 27f
 
 /** zen-folder-icon.inc.css: `cubic-bezier(0.42, 0, 0, 1)` over 0.3s. */
-private val FolderEasing = CubicBezierEasing(0.42f, 0f, 0f, 1f)
+val FolderEasingCurve = CubicBezierEasing(0.42f, 0f, 0f, 1f)
 
 /**
  * Port of ZenFolder's animated icon. [open] applies the `[state="open"]`
@@ -48,8 +48,8 @@ private val FolderEasing = CubicBezierEasing(0.42f, 0f, 0f, 1f)
  */
 @Composable
 fun FolderIcon(icon: ZenIcon?, open: Boolean, active: Boolean, size: Dp) {
-    val t by animateFloatAsState(if (open) 1f else 0f, tween(300, easing = FolderEasing), label = "folderOpen")
-    val dotsAlpha by animateFloatAsState(if (active) 1f else 0f, tween(300, easing = FolderEasing), label = "folderDots")
+    val t by animateFloatAsState(if (open) 1f else 0f, tween(300, easing = FolderEasingCurve), label = "folderOpen")
+    val dotsAlpha by animateFloatAsState(if (active) 1f else 0f, tween(300, easing = FolderEasingCurve), label = "folderDots")
     val colors = folderColors()
     val back = remember { PathParser().parsePathString(BACK_PATH).toPath() }
     val context = LocalContext.current

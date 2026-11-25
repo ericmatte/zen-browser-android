@@ -2,6 +2,9 @@ package app.zen.android.browser
 
 import android.content.Context
 import android.net.Uri
+import app.zen.android.ui.Autoplay
+import app.zen.android.ui.Preferences
+import app.zen.android.ui.SitePermission
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -34,8 +37,14 @@ sealed interface PageRequest {
         override fun cancel() = answer(null)
     }
 
-    class Permission(override val title: String, val message: String, val answer: (Boolean) -> Unit) : PageRequest {
-        override fun cancel() = answer(false)
+    /** [canRemember] is false in private tabs, which never store decisions. */
+    class Permission(
+        override val title: String,
+        val message: String,
+        val canRemember: Boolean,
+        val answer: (allow: Boolean, remember: Boolean) -> Unit,
+    ) : PageRequest {
+        override fun cancel() = answer(false, false)
     }
 }
 
@@ -45,7 +54,10 @@ interface ActivityBridge {
     fun pickFiles(mimeTypes: Array<String>, multiple: Boolean, result: (List<Uri>) -> Unit)
 }
 
-class PageRequests(private val context: Context) : PromptDelegate, GeckoSession.PermissionDelegate {
+class PageRequests(
+    private val context: Context,
+    private val preferences: () -> Preferences = { Preferences() },
+) : PromptDelegate, GeckoSession.PermissionDelegate {
     var current by mutableStateOf<PageRequest?>(null)
         private set
     var bridge: ActivityBridge? = null
@@ -134,20 +146,27 @@ class PageRequests(private val context: Context) : PromptDelegate, GeckoSession.
     }
 
     override fun onContentPermissionRequest(session: GeckoSession, perm: ContentPermission): GeckoResult<Int> {
+        val prefs = preferences()
         val host = runCatching { Uri.parse(perm.uri).host }.getOrNull() ?: "This site"
+        fun decided(allow: Boolean) = GeckoResult.fromValue(if (allow) ContentPermission.VALUE_ALLOW else ContentPermission.VALUE_DENY)
         val what = when (perm.permission) {
-            GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE -> return GeckoResult.fromValue(ContentPermission.VALUE_ALLOW)
-            GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE -> return GeckoResult.fromValue(ContentPermission.VALUE_DENY)
-            GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION -> "know your location"
-            GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION -> "send notifications"
+            GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_INAUDIBLE -> return decided(prefs.autoplay != Autoplay.BLOCK_ALL)
+            GeckoSession.PermissionDelegate.PERMISSION_AUTOPLAY_AUDIBLE -> return decided(prefs.autoplay == Autoplay.ALLOW)
+            GeckoSession.PermissionDelegate.PERMISSION_GEOLOCATION ->
+                if (prefs.location == SitePermission.BLOCK) return decided(false) else "know your location"
+            GeckoSession.PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION ->
+                if (prefs.notifications == SitePermission.BLOCK) return decided(false) else "send notifications"
             GeckoSession.PermissionDelegate.PERMISSION_PERSISTENT_STORAGE -> "store data on your device"
             GeckoSession.PermissionDelegate.PERMISSION_MEDIA_KEY_SYSTEM_ACCESS -> "play protected content"
             GeckoSession.PermissionDelegate.PERMISSION_STORAGE_ACCESS -> "use its cookies here"
-            else -> return GeckoResult.fromValue(ContentPermission.VALUE_DENY)
+            else -> return decided(false)
         }
         return respond { r ->
-            PageRequest.Permission(host, "$host wants to $what.") { ok ->
-                r.complete(if (ok) ContentPermission.VALUE_ALLOW else ContentPermission.VALUE_DENY)
+            PageRequest.Permission(host, "$host wants to $what.", canRemember = !perm.privateMode) { allow, remember ->
+                val value = if (allow) ContentPermission.VALUE_ALLOW else ContentPermission.VALUE_DENY
+                // Stored decisions stop Gecko from asking again on every page of the site.
+                if (remember && !perm.privateMode) Gecko.runtime(context).storageController.setPermission(perm, value)
+                r.complete(value)
             }
         }
     }
@@ -172,9 +191,16 @@ class PageRequests(private val context: Context) : PromptDelegate, GeckoSession.
         audio: Array<out GeckoSession.PermissionDelegate.MediaSource>?,
         callback: GeckoSession.PermissionDelegate.MediaCallback,
     ) {
+        val prefs = preferences()
+        val wantsVideo = video?.firstOrNull() != null
+        val wantsAudio = audio?.firstOrNull() != null
+        if ((wantsVideo && prefs.camera == SitePermission.BLOCK) || (wantsAudio && prefs.microphone == SitePermission.BLOCK)) {
+            callback.reject()
+            return
+        }
         val host = runCatching { Uri.parse(uri).host }.getOrNull() ?: "This site"
         val wants = listOfNotNull(video?.firstOrNull()?.let { "camera" }, audio?.firstOrNull()?.let { "microphone" }).joinToString(" and ")
-        show(PageRequest.Permission(host, "$host wants to use your $wants.") { ok ->
+        show(PageRequest.Permission(host, "$host wants to use your $wants.", canRemember = false) { ok, _ ->
             if (ok) callback.grant(video?.firstOrNull(), audio?.firstOrNull()) else callback.reject()
         })
     }

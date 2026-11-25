@@ -16,7 +16,8 @@ The app reuses desktop code or ports it closely:
 | Desktop source | Android |
 | --- | --- |
 | `src/zen/sync/ZenSpacesSyncModel.sys.mjs` record format | `sync/SpacesModel.kt` |
-| `src/zen/spaces/ZenGradientGenerator.mjs` gradient math | `ui/ZenGradient.kt` |
+| `src/zen/spaces/ZenGradientGenerator.mjs` gradient and text-colour math | `ui/ZenGradient.kt` |
+| `src/zen/library` history section (search, filter, sort, clear) | `ui/Library.kt` |
 | `src/zen/folders/ZenFolder.mjs` folder icon + open animation | `ui/FolderIcon.kt` |
 | `zen-icons/common/selectable/*.svg` space/folder icons | `assets/zen-icons.json` |
 | `zen-icons/nucleo/*.svg` UI icons | `assets/ui-icons.json` |
@@ -27,9 +28,17 @@ The app reuses desktop code or ports it closely:
 
 - Home: desktop-style search at launch and for each new tab. Results
   (open tabs, history, suggestions) appear only once you type.
-- Sidebar: essentials, spaces (swipe between them), pinned tabs, folders, the
-  "Clear" separator, space switcher. Swipe a tab left to close it. Long-press
-  and drag to reorder or to pin/unpin.
+- Sidebar: spaces (swipe between them, colours blend with the finger), pinned
+  tabs, folders, the "Clear" separator, space switcher, library (history).
+  Tap a space name to rename it (synced); tap its icon to fold pinned tabs.
+  Swipe a tab left to close (or unpin), right to pin (or unpin). Hold an item
+  for its menu; slide onto an entry and release, or move away to drag it
+  (reorder, pin, or drop into Essentials).
+- Essentials are local to the phone (never synced) and hold up to 12 tabs.
+- Unpinned tabs opened on the phone close after a chosen idle time. Tabs
+  opened on desktop are never closed from the phone.
+- Sync runs on its own: at launch, on resume, after each change and every
+  5 minutes.
 - Address bar: shows the page title; tap it for the URL and a copy-link
   button, docked above the keyboard. Swipe it to slide to the previous or next
   tab, flick up for a new tab. Hold the sidebar button for recent tabs, slide

@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.tappableElement
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
@@ -86,12 +87,16 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     val spaces by vm.spaces.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val prefs by vm.settings.state.collectAsStateWithLifecycle()
+    val menu = remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     val recents = remember { RecentsMenu() }
     val pageShift = remember { Animatable(0f) }
 
     LaunchedEffect(drawer.isOpen) { if (drawer.isOpen) vm.syncNow() }
-    LaunchedEffect(vm.privateMode) { if (!drawer.isOpen) drawer.snapSide(vm.privateMode) }
+    val essentials by vm.essentials.collectAsStateWithLifecycle()
+    // Private tabs always use the side opposite to spaces (desktop's zen.tabs.vertical.right-side picks the spaces side).
+    val drawerOnRight = vm.privateMode != prefs.sidebarRight
+    LaunchedEffect(drawerOnRight) { if (!drawer.isOpen) drawer.snapSide(drawerOnRight) }
 
     // Only claim "back" when the page has history, so Android 14's predictive back-to-home still plays otherwise.
     BackHandler(vm.canGoBack) { vm.goBack() }
@@ -112,7 +117,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
 
     fun enterPrivate() = scope.launch {
         vm.togglePrivateMode()
-        drawer.moveTo(right = true)
+        drawer.moveTo(right = !prefs.sidebarRight)
         delay(120)
         drawer.closeAndWait()
         vm.openLauncher()
@@ -120,33 +125,8 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
 
     fun leavePrivate() = scope.launch {
         vm.togglePrivateMode()
-        drawer.moveTo(right = false)
+        drawer.moveTo(right = prefs.sidebarRight)
     }
-
-    val actions = SidebarActions(
-        onSpaceChange = { vm.activeSpace = it },
-        onTab = { tab ->
-            vm.selectTab(tab)
-            drawer.close()
-        },
-        onCloseTab = vm::closeTab,
-        onClearTabs = vm::clearRegularTabs,
-        onMove = { vm.move(it) },
-        onToggleFolder = vm.settings::toggleFolder,
-        onNewTab = {
-            drawer.close()
-            vm.openLauncher()
-        },
-        onSignIn = {
-            vm.beginLogin()
-            drawer.close()
-        },
-        onSync = { vm.syncNow() },
-        onSettings = {
-            vm.showSettings = true
-            drawer.close()
-        },
-    )
 
     BoxWithConstraints(Modifier.fillMaxSize().background(statusColor)) {
         val drawerWidth = min(maxWidth * 0.86f, 380.dp)
@@ -176,7 +156,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
             }
 
             if (!vm.fullScreen) {
-                EdgeSwipe(drawer, Modifier.align(if (vm.privateMode) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
+                EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
                 vm.findQuery?.let { FindBar(vm, Modifier.align(Alignment.TopCenter).statusBarsPadding()) }
                 BottomChrome(
                     vm = vm,
@@ -185,9 +165,11 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     onSidebar = { drawer.open() },
                     recents = recents,
                     swipe = swipe,
+                    menu = menu,
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 RecentsPopover(recents, Modifier.align(Alignment.BottomStart))
+                BarMenu(vm, menu, Modifier.align(Alignment.BottomEnd))
             }
         }
 
@@ -218,16 +200,24 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     ),
             ) {
                 if (vm.privateMode) {
-                    PrivateSidebar(vm, onTab = actions.onTab, onClose = { drawer.close() }, onLeave = { leavePrivate() })
+                    PrivateSidebar(
+                        vm,
+                        onTab = { tab ->
+                            vm.selectTab(tab)
+                            drawer.close()
+                        },
+                        onClose = { drawer.close() },
+                        onLeave = { leavePrivate() },
+                    )
                 } else {
                     SpacesSidebar(
+                        vm = vm,
                         state = spaces,
                         status = status,
-                        expandedFolders = prefs.expandedFolders,
-                        activeSpace = vm.activeSpace,
-                        activeTab = vm.activeTab,
+                        prefs = prefs,
+                        essentials = essentials,
                         dark = dark,
-                        actions = actions,
+                        onClose = { drawer.close() },
                         onPrivate = { enterPrivate() },
                     )
                 }
@@ -235,7 +225,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         }
 
         Launcher(vm)
-        Overlays(vm)
+        Overlays(vm, dark)
     }
 }
 
@@ -364,13 +354,16 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, modifier: Modif
     val background = MaterialTheme.colorScheme.background
     val density = LocalDensity.current
     val navBar = WindowInsets.navigationBars.getBottom(density)
-    val barSpace = with(density) { (BarHeight + BarMargin * 2).roundToPx() } + navBar
+    val barSpace = with(density) { (BarHeight + BarMargin + barBottomMargin()).roundToPx() } + navBar
     val shown by animateFloatAsState(if (vm.chromeVisible && !vm.fullScreen) 1f else 0f, tween(220), label = "chrome")
 
     AndroidView(
         modifier = modifier,
         factory = { context ->
             GeckoView(context).apply {
+                // Lets Android autofill services (1Password, Bitwarden, Google…) read and fill login forms.
+                setAutofillEnabled(true)
+                importantForAutofill = android.view.View.IMPORTANT_FOR_AUTOFILL_YES
                 coverUntilFirstPaint(background.toArgbInt())
                 geckoView = this
             }
@@ -406,6 +399,17 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, modifier: Modif
             }
         }, { null })
     }
+}
+
+/**
+ * Gesture navigation (the floating handle) has no tappable bottom inset; its
+ * handle already sits apart from the content, so the bar drops its bottom gap.
+ */
+@Composable
+fun barBottomMargin(): androidx.compose.ui.unit.Dp {
+    val density = LocalDensity.current
+    val gestureNav = WindowInsets.tappableElement.getBottom(density) == 0 && WindowInsets.navigationBars.getBottom(density) > 0
+    return if (gestureNav) 0.dp else BarMargin
 }
 
 fun Color.toArgbInt(): Int = android.graphics.Color.argb(

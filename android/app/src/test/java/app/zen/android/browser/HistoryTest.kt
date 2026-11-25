@@ -52,4 +52,18 @@ class HistoryTest {
         h.record("about:blank", "")
         assertTrue(h.search("blank").isEmpty())
     }
+
+    @Test
+    fun `library browse filters by time and sorts like desktop`() {
+        val h = History(null)
+        h.record("https://b.com/", "B", 5 * day)
+        h.record("https://a.com/", "A", 1 * day)
+        repeat(3) { h.record("https://c.com/", "C", 3 * day) }
+        assertEquals(listOf("B", "C", "A"), h.browse("", null, HistorySort.DATE).map { it.title })
+        assertEquals(listOf("A", "B", "C"), h.browse("", null, HistorySort.SITE).map { it.title })
+        assertEquals("C", h.browse("", null, HistorySort.MOST_VISITED).first().title)
+        assertEquals(listOf("B", "C"), h.browse("", 2 * day, HistorySort.DATE).map { it.title })
+        h.clearSince(4 * day)
+        assertEquals(listOf("C", "A"), h.browse("", null, HistorySort.DATE).map { it.title })
+    }
 }

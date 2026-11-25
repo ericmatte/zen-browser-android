@@ -35,12 +35,97 @@ object ZenGradient {
     /** Stops are (position 0..1, ARGB). [overlay] is the third dot, faded in from the top like desktop's overlay strips. */
     data class Spec(val stops: List<Pair<Float, Long>>, val overlay: Long?, val custom: Boolean)
 
+    /** kBlankWindowColors: what desktop paints for a space without a theme. */
+    fun blankTheme(dark: Boolean): SpaceTheme = if (dark) {
+        SpaceTheme(listOf(0xFF09091DL, 0xFF15091CL), MAX_OPACITY.toFloat())
+    } else {
+        SpaceTheme(listOf(0xFFE0E0EEL, 0xFFF8E9E4L), MAX_OPACITY.toFloat())
+    }
+
+    /** Text and accent colours that sit on a space's gradient. */
+    data class Chrome(val lightText: Boolean, val text: Long, val accent: Long)
+
+    /**
+     * Port of shouldBeDarkMode, titleColors, toolbarTextStyles and
+     * getAccentColorForUI: the text turns light or dark depending on which
+     * reads better on the dominant colour, tinted 12% with it, at 90% opacity.
+     */
+    fun chrome(theme: SpaceTheme?, dark: Boolean): Chrome {
+        val t = theme?.takeIf { it.colors.isNotEmpty() } ?: blankTheme(dark)
+        val dominant = toRgb(t.dominant)
+        val bg = composite(dominant, layerAlpha(t.opacity.toDouble()), underlay(dark))
+        val titleLight = blend(dominant, rgb(0.0, 0.0, 0.0), TEXT_TINT)
+        val titleDark = blend(dominant, rgb(255.0, 255.0, 255.0), TEXT_TINT)
+        val darkText = blend(titleDark, bg, TEXT_OPACITY)
+        val lightText = blend(titleLight, bg, TEXT_OPACITY)
+        val useLightText = contrastRatio(bg, darkText) > contrastRatio(bg, lightText)
+        val title = if (useLightText) titleDark else titleLight
+        val textArgb = (argb(title) and 0x00FFFFFFL) or ((TEXT_OPACITY * 255).roundToInt().toLong() shl 24)
+        return Chrome(useLightText, textArgb, argb(accentForUi(dominant, useLightText, dark)))
+    }
+
+    private const val TEXT_OPACITY = 0.9
+    private const val TEXT_TINT = 0.12
+
+    private fun blend(a: Rgb, b: Rgb, p: Double): Rgb = rgb(*DoubleArray(3) { (a[it] * p + b[it] * (1 - p)).roundToInt().toDouble() })
+
+    fun luminance(c: Rgb): Double {
+        val v = c.map { x -> (x / 255).let { if (it <= 0.03928) it / 12.92 else ((it + 0.055) / 1.055).pow(2.4) } }
+        return v[0] * 0.2126 + v[1] * 0.7152 + v[2] * 0.0722
+    }
+
+    fun contrastRatio(a: Rgb, b: Rgb): Double {
+        val la = luminance(a)
+        val lb = luminance(b)
+        return (maxOf(la, lb) + 0.05) / (minOf(la, lb) + 0.05)
+    }
+
+    private fun accentForUi(c: Rgb, useLightText: Boolean, systemDark: Boolean): Rgb {
+        if (useLightText || (c[0] == c[1] && c[1] == c[2])) return c
+        val (h, s, l) = rgbToHsl(c)
+        val target = if (systemDark) 0.62 else 0.42
+        return hslToRgb(h, minOf(1.0, s + 0.3), l * 0.4 + target * 0.6)
+    }
+
+    private fun rgbToHsl(c: Rgb): Triple<Double, Double, Double> {
+        val r = c[0] / 255
+        val g = c[1] / 255
+        val b = c[2] / 255
+        val max = maxOf(r, g, b)
+        val min = minOf(r, g, b)
+        val l = (max + min) / 2
+        if (max == min) return Triple(0.0, 0.0, l)
+        val d = max - min
+        val s = if (l > 0.5) d / (2 - max - min) else d / (max + min)
+        val h = when (max) {
+            r -> (g - b) / d + if (g < b) 6 else 0
+            g -> (b - r) / d + 2
+            else -> (r - g) / d + 4
+        } / 6
+        return Triple(h, s, l)
+    }
+
+    private fun hslToRgb(h: Double, s: Double, l: Double): Rgb {
+        if (s == 0.0) return rgb(l * 255, l * 255, l * 255)
+        fun hue(p: Double, q: Double, tIn: Double): Double {
+            var t = tIn
+            if (t < 0) t += 1
+            if (t > 1) t -= 1
+            return when {
+                t < 1.0 / 6 -> p + (q - p) * 6 * t
+                t < 1.0 / 2 -> q
+                t < 2.0 / 3 -> p + (q - p) * (2.0 / 3 - t) * 6
+                else -> p
+            }
+        }
+        val q = if (l < 0.5) l * (1 + s) else l + s - l * s
+        val p = 2 * l - q
+        return rgb(hue(p, q, h + 1.0 / 3) * 255, hue(p, q, h) * 255, hue(p, q, h - 1.0 / 3) * 255)
+    }
+
     fun spec(theme: SpaceTheme?, dark: Boolean): Spec {
         val underlay = underlay(dark)
-        if (theme == null || theme.colors.isEmpty()) {
-            val base = if (dark) rgb(23.0, 23.0, 26.0) else rgb(240.0, 240.0, 244.0)
-            return Spec(listOf(0f to argb(base), 1f to argb(base)), null, false)
-        }
+        if (theme == null || theme.colors.isEmpty()) return spec(blankTheme(dark), dark)
         val alpha = layerAlpha(theme.opacity.toDouble())
         val rgbs = theme.colors.map(::toRgb)
         if (rgbs.size == 1) {

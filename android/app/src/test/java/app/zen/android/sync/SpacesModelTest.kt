@@ -216,4 +216,34 @@ class SpacesModelTest {
         assertEquals("Inbox", state.tab("r")!!.title)
         assertEquals("T-p", state.tab("p")!!.title)
     }
+
+    @Test
+    fun `renaming a space and a folder uploads only the changed records`() {
+        val (next, changes) = desktop.apply(listOf(LocalEdit.RenameSpace("s1", "  Job "), LocalEdit.RenameFolder("f1", "Refs")))
+        assertEquals("Job", next.spaces()[1].name)
+        assertEquals("Refs", (next.spaces()[1].items[0] as FolderItem).name)
+        assertEquals(setOf("s1", "f1"), changes.keys)
+    }
+
+    @Test
+    fun `blank or identical names are ignored`() {
+        val (_, changes) = desktop.apply(listOf(LocalEdit.RenameSpace("s1", " "), LocalEdit.RenameSpace("s2", "Personal")))
+        assertTrue(changes.isEmpty())
+    }
+
+    @Test
+    fun `rename edits survive a json round trip`() {
+        listOf(LocalEdit.RenameSpace("a", "b"), LocalEdit.RenameFolder("c", "d")).forEach {
+            assertEquals(it, LocalEdit.fromJson(it.toJson()))
+        }
+    }
+
+    @Test
+    fun `theme dominant colour is the primary dot or the middle one`() {
+        fun theme(vararg dots: Pair<Int, Boolean>) = SpaceTheme.parse(
+            JSONObject().put("gradientColors", JSONArray(dots.map { (r, p) -> JSONObject().put("c", JSONArray(listOf(r, 0, 0))).put("isPrimary", p) }))
+        )!!
+        assertEquals(0xFF140000L, theme(10 to false, 20 to true, 30 to false).dominant)
+        assertEquals(0xFF140000L, theme(10 to false, 20 to false, 30 to false).dominant)
+    }
 }

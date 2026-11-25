@@ -38,8 +38,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +46,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -96,6 +95,7 @@ fun BottomChrome(
     onSidebar: () -> Unit,
     recents: RecentsMenu,
     swipe: PageSwipe,
+    menu: MutableState<Boolean>,
     modifier: Modifier,
 ) {
     val dock by animateFloatAsState(if (editing) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
@@ -108,7 +108,7 @@ fun BottomChrome(
             enter = slideInVertically { it } + fadeIn(),
             exit = slideOutVertically { it } + fadeOut(),
         ) {
-            AddressBar(vm, editing, dock, onEditingChange, onSidebar, recents, swipe)
+            AddressBar(vm, editing, dock, onEditingChange, onSidebar, recents, swipe, menu)
         }
     }
 }
@@ -126,13 +126,13 @@ private fun AddressBar(
     onSidebar: () -> Unit,
     recents: RecentsMenu,
     swipe: PageSwipe,
+    menu: MutableState<Boolean>,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
     val focusManager = LocalFocusManager.current
     val focus = remember { FocusRequester() }
     var field by remember { mutableStateOf(TextFieldValue("")) }
-    var menu by remember { mutableStateOf(false) }
     val onSurface = MaterialTheme.colorScheme.onSurface
     val accent = MaterialTheme.colorScheme.primary
 
@@ -143,12 +143,13 @@ private fun AddressBar(
     }
 
     val side = lerp(12.dp, 0.dp, dock)
-    val vertical = lerp(BarMargin, 0.dp, dock)
+    val top = lerp(BarMargin, 0.dp, dock)
+    val bottom = lerp(barBottomMargin(), 0.dp, dock)
     val topCorner = lerp(26.dp, 18.dp, dock)
     val bottomCorner = lerp(26.dp, 0.dp, dock)
 
     GlassSurface(
-        modifier = Modifier.padding(horizontal = side, vertical = vertical).fillMaxWidth().height(BarHeight),
+        modifier = Modifier.padding(start = side, end = side, top = top, bottom = bottom).fillMaxWidth().height(BarHeight),
         shape = RoundedCornerShape(topStart = topCorner, topEnd = topCorner, bottomStart = bottomCorner, bottomEnd = bottomCorner),
         tint = if (vm.privateMode) PrivateTint else null,
         solidity = dock,
@@ -208,10 +209,7 @@ private fun AddressBar(
                 IconButton(onClick = vm::openLauncher) {
                     Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
                 }
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = onSurface) }
-                    BarMenu(vm, menu, onDismiss = { menu = false })
-                }
+                IconButton(onClick = { menu.value = !menu.value }) { Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = onSurface) }
             }
         }
         if (vm.progress in 1..99) {
@@ -354,7 +352,7 @@ class RecentsMenu {
 fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     AnimatedVisibility(
         recents.open,
-        modifier = modifier.navigationBarsPadding().padding(start = 12.dp, bottom = BarHeight + BarMargin * 2),
+        modifier = modifier.navigationBarsPadding().padding(start = 12.dp, bottom = BarHeight + BarMargin + barBottomMargin() + 6.dp),
         enter = scaleIn(spring(dampingRatio = 0.75f, stiffness = 500f), initialScale = 0.5f, transformOrigin = TransformOrigin(0.1f, 1f)) + fadeIn(tween(120)),
         exit = scaleOut(tween(140), targetScale = 0.7f, transformOrigin = TransformOrigin(0.1f, 1f)) + fadeOut(tween(140)),
     ) {
@@ -404,39 +402,68 @@ fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     }
 }
 
+/** The "⋯" menu, anchored just above the bar (the system dropdown keeps a 48dp gap from screen edges). */
 @Composable
-private fun BarMenu(vm: BrowserViewModel, expanded: Boolean, onDismiss: () -> Unit) {
+fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifier) {
     val context = LocalContext.current
-    @Composable
-    fun Item(label: String, icon: String, action: () -> Unit) {
-        DropdownMenuItem(
-            text = { Text(label) },
-            leadingIcon = { Icon(zenIcon(icon), null, Modifier.size(18.dp)) },
-            onClick = {
-                onDismiss()
-                action()
-            },
+    fun close() {
+        open.value = false
+    }
+    if (open.value) {
+        androidx.activity.compose.BackHandler { close() }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() },
         )
     }
-    DropdownMenu(expanded, onDismissRequest = onDismiss, shape = RoundedCornerShape(16.dp)) {
-        Row(Modifier.padding(horizontal = 8.dp)) {
-            IconButton(onClick = { onDismiss(); vm.goBack() }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
-            IconButton(onClick = { onDismiss(); vm.goForward() }) { Icon(zenIcon("forward"), "Forward", Modifier.size(18.dp)) }
-            IconButton(onClick = { onDismiss(); vm.reload() }) {
-                Icon(zenIcon(if (vm.progress in 1..99) "close" else "reload"), "Reload", Modifier.size(18.dp))
+    AnimatedVisibility(
+        open.value,
+        modifier = modifier.navigationBarsPadding().padding(end = 12.dp, bottom = BarHeight + BarMargin + barBottomMargin() + 6.dp),
+        enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 600f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeIn(tween(120)),
+        exit = scaleOut(tween(130), targetScale = 0.85f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeOut(tween(130)),
+    ) {
+        Surface(
+            Modifier.width(250.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 14.dp,
+        ) {
+            Column(Modifier.padding(vertical = 6.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    IconButton(onClick = { close(); vm.goBack() }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
+                    IconButton(onClick = { close(); vm.goForward() }) { Icon(zenIcon("forward"), "Forward", Modifier.size(18.dp)) }
+                    IconButton(onClick = { close(); vm.reload() }) {
+                        Icon(zenIcon(if (vm.progress in 1..99) "close" else "reload"), "Reload", Modifier.size(18.dp))
+                    }
+                    IconButton(onClick = { close(); share(context, vm.url) }) { Icon(zenIcon("share"), "Share", Modifier.size(18.dp)) }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                @Composable
+                fun Item(label: String, icon: String, action: () -> Unit) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            close()
+                            action()
+                        }.padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(zenIcon(icon), null, Modifier.size(18.dp))
+                        Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+                Item("New tab", "plus") { vm.openLauncher() }
+                Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
+                Item("Copy link", "link") {
+                    copyToClipboard(context, vm.url)
+                    vm.message = "Link copied"
+                }
+                Item("Find in page", "search-page") { vm.startFind() }
+                Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
+                Item("History", "history") { vm.showLibrary = true }
+                Item("Settings", "settings") { vm.showSettings = true }
             }
-            IconButton(onClick = { onDismiss(); share(context, vm.url) }) { Icon(zenIcon("share"), "Share", Modifier.size(18.dp)) }
         }
-        HorizontalDivider()
-        Item("New tab", "plus") { vm.openLauncher() }
-        Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
-        Item("Copy link", "link") {
-            copyToClipboard(context, vm.url)
-            vm.message = "Link copied"
-        }
-        Item("Find in page", "search-page") { vm.startFind() }
-        Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
-        Item("Settings", "settings") { vm.showSettings = true }
     }
 }
 

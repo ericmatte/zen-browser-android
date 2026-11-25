@@ -39,4 +39,21 @@ class FxaAuthTest {
         assertTrue(auth.isRedirect("${FxaConfig.REDIRECT_URI}?code=1&state=2"))
         assertTrue(!auth.isRedirect("https://accounts.firefox.com/signin"))
     }
+
+    @Test
+    fun `email is read from the profile endpoint with a profile scoped token`() {
+        val calls = mutableListOf<String>()
+        val auth = FxaAuth { method, url, headers, body ->
+            calls += "$method $url ${headers["Authorization"].orEmpty()} ${body.orEmpty()}"
+            if (url.endsWith("/oauth/token")) {
+                HttpResponse(200, JSONObject().put("access_token", "tok").put("expires_in", 60).toString(), emptyMap())
+            } else {
+                HttpResponse(200, JSONObject().put("email", "me@example.com").toString(), emptyMap())
+            }
+        }
+        val email = auth.email(SyncCredentials("refresh", "kid", ByteArray(64)))
+        assertEquals("me@example.com", email)
+        assertTrue(calls[0].contains("\"scope\":\"profile\""))
+        assertTrue(calls[1].startsWith("GET https://profile.accounts.firefox.com/v1/profile Bearer tok"))
+    }
 }
