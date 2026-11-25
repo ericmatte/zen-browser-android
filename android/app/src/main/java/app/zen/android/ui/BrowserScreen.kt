@@ -24,7 +24,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,7 +63,14 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
@@ -91,12 +100,20 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     val spaces by vm.spaces.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val prefs by vm.settings.state.collectAsStateWithLifecycle()
-    val menu = remember { mutableStateOf(false) }
+    val menu = remember { BarMenuState() }
+    val linkMenu = remember { SlideSelect() }
+    val haptics = LocalHapticFeedback.current
+    var pageOrigin by remember { mutableStateOf(Offset.Zero) }
     var editing by remember { mutableStateOf(false) }
     val recents = remember { RecentsMenu() }
     val pageShift = remember { Animatable(0f) }
 
-    LaunchedEffect(drawer.isOpen) { if (drawer.isOpen) vm.syncNow() }
+    LaunchedEffect(drawer.isOpen) {
+        if (drawer.isOpen) vm.syncNow() else vm.showLibrary = false
+    }
+    // History lives inside the sidebar, like desktop's library: opening it from the menu brings the sidebar along.
+    LaunchedEffect(vm.showLibrary) { if (vm.showLibrary && !drawer.isOpen) drawer.open() }
+    val library by animateFloatAsState(if (vm.showLibrary) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 380f), label = "library")
     val essentials by vm.essentials.collectAsStateWithLifecycle()
     // Private tabs always use the side opposite to spaces (desktop's zen.tabs.vertical.right-side picks the spaces side).
     val drawerOnRight = vm.privateMode != prefs.sidebarRight
@@ -143,7 +160,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(statusColor)) {
-        val drawerWidth = min(maxWidth * 0.86f, 380.dp)
+        val drawerWidth = androidx.compose.ui.unit.lerp(min(maxWidth * 0.86f, 380.dp), maxWidth, library)
         val density = LocalDensity.current
         val widthPx = with(density) { drawerWidth.toPx() }
         val screenPx = with(density) { maxWidth.toPx() }
@@ -154,7 +171,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         val sideBar = landscape && !vm.fullScreen
         val barLift = BarHeight + BarMargin + barBottomMargin() + 6.dp
         val inset = maxWidth * BarSideInset
-        val sideInset = maxHeight * BarSideInset
+        val sideInset = maxHeight * SideBarInset
 
         Box(
             Modifier
@@ -174,6 +191,24 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                         .weight(1f)
                         .fillMaxWidth()
                         .background(background)
+                        .onGloballyPositioned { pageOrigin = it.positionInRoot() }
+                        .pointerInput(Unit) {
+                            // Gecko opens the link menu while the finger is still down; from then on the finger can slide onto an entry.
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                while (true) {
+                                    val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) break
+                                    if (vm.contextMenu != null) {
+                                        linkMenu.reset()
+                                        val moved = followHeldFinger(down.id, { pageOrigin }, linkMenu, haptics)
+                                        val action = linkMenu.take()
+                                        if (action != null) action() else if (moved) vm.contextMenu = null
+                                        break
+                                    }
+                                }
+                            }
+                        }
                         .then(if (sideBar) Modifier.windowInsetsPadding(SideBarInsets).padding(start = BarHeight) else Modifier),
                 ) {
                     PageView(vm, prefs.tintStatusBar, landscape, Modifier.fillMaxSize().graphicsLayer { translationX = pageShift.value })
@@ -183,7 +218,6 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
 
             if (!vm.fullScreen) {
                 EdgeSwipe(drawer, Modifier.align(if (drawerOnRight) Alignment.CenterEnd else Alignment.CenterStart).offset(y = 80.dp))
-                vm.findQuery?.let { FindBar(vm, Modifier.align(Alignment.TopCenter).statusBarsPadding()) }
                 LauncherBackdrop(vm)
                 BottomChrome(
                     vm = vm,
@@ -235,7 +269,11 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     .width(drawerWidth)
                     .fillMaxHeight()
                     .offset { IntOffset(drawer.x().toInt(), 0) }
-                    .clip(if (onRight) RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp) else RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp))
+                    .clip(
+                        (22.dp * (1f - library)).let { r ->
+                            if (onRight) RoundedCornerShape(topStart = r, bottomStart = r) else RoundedCornerShape(topEnd = r, bottomEnd = r)
+                        },
+                    )
                     .nestedScroll(drawer.nestedScroll)
                     .draggable(
                         orientation = Orientation.Horizontal,
@@ -243,32 +281,51 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                         onDragStopped = { drawer.settle(it) },
                     ),
             ) {
-                if (vm.privateMode) {
-                    PrivateSidebar(
-                        vm,
-                        onTab = { tab ->
-                            vm.selectTab(tab)
-                            drawer.close()
-                        },
-                        onClose = { drawer.close() },
-                        onLeave = { leavePrivate() },
-                    )
-                } else {
-                    SpacesSidebar(
-                        vm = vm,
-                        state = spaces,
-                        status = status,
-                        prefs = prefs,
-                        essentials = essentials,
-                        dark = dark,
-                        onClose = { drawer.close() },
-                        onPrivate = { enterPrivate() },
-                    )
+                if (library > 0f) {
+                    val theme = vm.space(vm.activeSpace)?.theme
+                    val spec = remember(theme, dark) { ZenGradient.spec(theme, dark) }
+                    Box(Modifier.fillMaxSize().then(if (vm.privateMode) Modifier.background(PrivateBackdrop) else Modifier.zenSpaceBackground(spec)))
+                }
+                Box(
+                    Modifier.fillMaxSize().graphicsLayer {
+                        val scale = 1f - 0.08f * library
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 1f - library
+                    },
+                ) {
+                    if (vm.privateMode) {
+                        PrivateSidebar(
+                            vm,
+                            onTab = { tab ->
+                                vm.selectTab(tab)
+                                drawer.close()
+                            },
+                            onClose = { drawer.close() },
+                            onLeave = { leavePrivate() },
+                        )
+                    } else {
+                        SpacesSidebar(
+                            vm = vm,
+                            state = spaces,
+                            status = status,
+                            prefs = prefs,
+                            essentials = essentials,
+                            dark = dark,
+                            onClose = { drawer.close() },
+                            onPrivate = { enterPrivate() },
+                        )
+                    }
+                }
+                if (library > 0f) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { translationX = -(1f - library) * size.width }) {
+                        LibraryScreen(vm, dark, onOpened = { drawer.close() })
+                    }
                 }
             }
         }
 
-        Overlays(vm, dark)
+        Overlays(vm, dark, linkMenu)
     }
 }
 
@@ -393,6 +450,7 @@ private fun SystemBars(lightIcons: Boolean, hidden: Boolean) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Boolean, modifier: Modifier) {
     var geckoView by remember { mutableStateOf<GeckoView?>(null) }
@@ -401,7 +459,8 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Bool
     val navBar = WindowInsets.navigationBars.getBottom(density)
     // In landscape the bar rests beside the page, so Gecko keeps no room for it at the bottom.
     val barSpace = if (landscape) 0 else with(density) { (BarHeight + BarMargin + barBottomMargin()).roundToPx() } + navBar
-    val shown by animateFloatAsState(if (vm.chromeVisible && !vm.fullScreen) 1f else 0f, tween(220), label = "chrome")
+    val keyboard = WindowInsets.isImeVisible
+    val shown by animateFloatAsState(if (vm.chromeVisible && !vm.fullScreen && !keyboard) 1f else 0f, tween(220), label = "chrome")
 
     AndroidView(
         modifier = modifier,

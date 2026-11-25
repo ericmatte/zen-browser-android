@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -63,6 +64,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,6 +78,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -181,11 +184,23 @@ fun SpacesSidebar(
         onPrimary = if (accent.isLight()) Color.Black else Color.White,
     )
 
+    val focusManager = LocalFocusManager.current
+    val spaceMenu = remember { HoldMenuState() }
     Box(
-        modifier.fillMaxSize().onGloballyPositioned {
-            origin = it.positionInRoot()
-            gestures.sidebarRect = it.boundsInRoot()
-        },
+        modifier
+            .fillMaxSize()
+            .onGloballyPositioned {
+                origin = it.positionInRoot()
+                gestures.sidebarRect = it.boundsInRoot()
+            }
+            .pointerInput(Unit) {
+                // A touch anywhere but the space name being edited ends the rename, like clicking away on desktop.
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val title = gestures.editingTitle
+                    if (title != null && !title.contains(origin + down.position)) focusManager.clearFocus()
+                }
+            },
     ) {
         Box(Modifier.matchParentSize().zenSpaceBackground(specFrom))
         if (t > 0.001f && to != from) Box(Modifier.matchParentSize().graphicsLayer { alpha = t }.zenSpaceBackground(specTo))
@@ -208,15 +223,33 @@ fun SpacesSidebar(
                         current = pager.currentPage,
                         status = status,
                         onPick = { scope.launch { pager.animateScrollToPage(it) } },
-                        onLibrary = {
-                            onClose()
-                            vm.showLibrary = true
+                        onLibrary = { vm.showLibrary = true },
+                        spaceMenu = spaceMenu,
+                        menuFor = { i ->
+                            val space = spaces[i]
+                            listOfNotNull(
+                                MenuAction("edit", "Rename Space") {
+                                    scope.launch { pager.animateScrollToPage(i) }
+                                    gestures.renameSpace = space.uuid
+                                },
+                                MenuAction("plus", "New Tab") {
+                                    vm.activeSpace = space.uuid
+                                    onClose()
+                                    vm.openLauncher()
+                                },
+                                MenuAction("pin", if (space.uuid in prefs.collapsedSpaces) "Show Pinned Tabs" else "Hide Pinned Tabs") {
+                                    vm.settings.toggleSpaceCollapsed(space.uuid)
+                                },
+                                MenuAction("trash", "Clear Temporary Tabs", destructive = true) { vm.clearRegularTabs(space.uuid) }
+                                    .takeIf { space.regularTabs.isNotEmpty() },
+                            )
                         },
                         onPrivate = onPrivate,
                         onRetry = { vm.syncNow() },
                     )
                 }
                 HoldOverlay(gestures, origin)
+                HoldMenuHost(spaceMenu)
             }
         }
     }
@@ -256,8 +289,6 @@ data class HeldEssential(val tab: TabItem, override val bounds: Rect) : Held {
     override val key get() = tab.id
 }
 
-class MenuAction(val icon: String, val label: String, val destructive: Boolean = false, val run: () -> Unit)
-
 /**
  * The iOS-style hold: after a long press a menu appears; sliding onto an
  * entry and lifting the finger runs it. Moving away from the menu instead
@@ -270,8 +301,7 @@ class SidebarGestures {
         private set
     var menuOpen by mutableStateOf(false)
         private set
-    var hovered by mutableStateOf<Int?>(null)
-        private set
+    val select = SlideSelect()
     var dragging by mutableStateOf(false)
         private set
     var pointer by mutableStateOf(Offset.Zero)
@@ -279,12 +309,13 @@ class SidebarGestures {
     var grab = Offset.Zero
         private set
     var dropLine by mutableStateOf<Float?>(null)
+    var renameSpace by mutableStateOf<String?>(null)
+    var editingTitle: Rect? = null
     var overEssentials by mutableStateOf(false)
     var essentialsRect = Rect.Zero
     var listRect = Rect.Zero
     var sidebarRect = Rect.Zero
     var menuRect = Rect.Zero
-    val actionRects = mutableMapOf<Int, Rect>()
     val hitRects = mutableMapOf<String, Pair<Rect, Held>>()
     val rowRects = mutableMapOf<String, Rect>()
     private var start = Offset.Zero
@@ -303,9 +334,8 @@ class SidebarGestures {
     fun begin(target: Held, menu: List<MenuAction>, point: Offset) {
         held = target
         actions = menu
-        actionRects.clear()
+        select.reset()
         menuRect = Rect.Zero
-        hovered = null
         menuOpen = menu.isNotEmpty()
         dragging = false
         enteredMenu = false
@@ -325,9 +355,7 @@ class SidebarGestures {
         }
         val inMenu = menuOpen && menuRect.contains(point)
         if (inMenu) enteredMenu = true
-        val next = if (inMenu) actionRects.entries.firstOrNull { it.value.contains(point) }?.key else null
-        val changed = next != null && next != hovered
-        hovered = next
+        val changed = menuOpen && select.hover(point)
         if (!inMenu && !enteredMenu && (point - start).getDistance() > slop) {
             menuOpen = false
             dragging = true
@@ -336,8 +364,8 @@ class SidebarGestures {
     }
 
     /** Ends the gesture; a still finger leaves the menu open for taps. */
-    fun release(): MenuAction? {
-        val action = hovered?.let { actions.getOrNull(it) }
+    fun release(): (() -> Unit)? {
+        val action = select.take()
         if (dragging || action != null || moved || !menuOpen) closeAll()
         return action
     }
@@ -346,7 +374,7 @@ class SidebarGestures {
         held = null
         menuOpen = false
         dragging = false
-        hovered = null
+        select.reset()
         dropLine = null
         overEssentials = false
     }
@@ -407,7 +435,7 @@ private fun EssentialsGrid(vm: BrowserViewModel, essentials: List<TabItem>, gest
                         if (!change.pressed) break
                     }
                     val dropInList = gestures.dragging && gestures.listRect.contains(gestures.pointer)
-                    gestures.release()?.run?.invoke()
+                    gestures.release()?.invoke()
                     if (dropInList) vm.activeSpace?.let { vm.essentialToSpace(target.tab, it) }
                 }
             },
@@ -470,12 +498,14 @@ private data object DividerRow : Row {
     override val key = "__divider"
 }
 
+private const val FILLER_KEY = "__filler"
+
 private data object NewTabRow : Row {
     override val key = "__newtab"
 }
 
 private fun rowsOf(space: Space, collapsed: Boolean): List<Row> =
-    (if (collapsed) emptyList() else space.pinnedItems.map(::ItemRow)) + DividerRow + NewTabRow + space.regularTabs.map(::ItemRow)
+    (if (collapsed) emptyList() else space.pinnedItems.map(::ItemRow)) + DividerRow + space.regularTabs.map(::ItemRow) + NewTabRow
 
 private fun itemOf(held: Held): SidebarItem = when (held) {
     is HeldTab -> held.tab
@@ -497,14 +527,14 @@ private fun dropTarget(space: Space, rows: List<Row>, gestures: SidebarGestures,
     }
     val divider = ordered.indexOf(DividerRow)
     val newTab = ordered.indexOf(NewTabRow)
-    // Folders always live in the pinned section, and nothing goes between the separator and "New Tab".
+    // Folders always live in the pinned section, and "New Tab" always closes the list, under the thumb.
     if (held is HeldFolder && index > divider) index = divider
-    if (index == newTab) index = newTab + 1
+    if (index > newTab) index = newTab
     val line = rects.getOrNull(index)?.top ?: rects.lastOrNull { it != null }?.bottom
     val moved = ordered.toMutableList().apply { add(index.coerceAtMost(size), ItemRow(itemOf(held))) }
     if (moved.map { it.key } == rows.map { it.key }) return null to line
     val pinned = moved.take(moved.indexOf(DividerRow)).map { it.key }
-    val regular = moved.drop(moved.indexOf(NewTabRow) + 1).map { it.key }
+    val regular = moved.subList(moved.indexOf(DividerRow) + 1, moved.indexOf(NewTabRow)).map { it.key }
     val hiddenPinned = space.pinnedItems.map { it.id }.filter { id -> rows.none { it.key == id } }
     return LocalEdit.placing(space.uuid, held.key, hiddenPinned + pinned, regular) to line
 }
@@ -527,6 +557,58 @@ private fun SpacePage(
     val listState = rememberLazyListState()
     var listOrigin by remember { mutableStateOf(Offset.Zero) }
     val held = gestures.held
+    // Temporary tabs sit at the bottom, within thumb reach; the gap above them absorbs the spare height.
+    val filler by remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val visible = info.visibleItemsInfo
+            if (visible.size < info.totalItemsCount) {
+                0
+            } else {
+                val used = visible.filter { it.key != FILLER_KEY }.sumOf { it.size }
+                (info.viewportEndOffset - info.viewportStartOffset - info.beforeContentPadding - info.afterContentPadding - used).coerceAtLeast(0)
+            }
+        }
+    }
+
+    @Composable
+    fun LazyItemScope.SidebarRow(row: Row) {
+        val lifted = held?.key == row.key
+        val modifier = Modifier
+            .animateItem()
+            .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
+            .graphicsLayer { alpha = if (lifted && gestures.dragging) 0.3f else 1f }
+        when (row) {
+            is ItemRow -> Box(modifier) {
+                when (val item = row.item) {
+                    is TabItem -> SwipeTab(vm, item, space.uuid, depth = 0, gestures = gestures, onOpen = onClose)
+                    is FolderItem -> FolderEntry(vm, item, space.uuid, prefs, gestures, onClose)
+                }
+            }
+            DividerRow -> Row(modifier.fillMaxWidth().height(28.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)))
+                if (space.regularTabs.isNotEmpty()) {
+                    Text(
+                        "↓ Clear",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs(space.uuid) }
+                            .padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
+                    )
+                }
+            }
+            NewTabRow -> Row(
+                modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable {
+                    onClose()
+                    vm.openLauncher()
+                }.padding(horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(zenIcon("plus"), null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
+                Text("New Tab", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
+    }
 
     LazyColumn(
         state = listState,
@@ -581,7 +663,7 @@ private fun SpacePage(
                     val toEssentials = gestures.dragging && gestures.overEssentials
                     val chosen = gestures.release()
                     when {
-                        chosen != null -> chosen.run()
+                        chosen != null -> chosen()
                         toEssentials && target is HeldTab -> vm.addEssential(target.tab)
                         edit != null -> vm.move(edit!!)
                     }
@@ -590,52 +672,26 @@ private fun SpacePage(
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 12.dp),
     ) {
         item(key = "__header") {
-            SpaceHeader(space, collapsed, onToggle = { vm.settings.toggleSpaceCollapsed(space.uuid) }, onRename = { vm.renameSpace(space.uuid, it) })
+            SpaceHeader(space, collapsed, gestures, onToggle = { vm.settings.toggleSpaceCollapsed(space.uuid) }, onRename = { vm.renameSpace(space.uuid, it) })
         }
-        items(rows, key = { it.key }) { row ->
-            val lifted = held?.key == row.key
-            val modifier = Modifier
-                .animateItem()
-                .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
-                .graphicsLayer { alpha = if (lifted && gestures.dragging) 0.3f else 1f }
-            when (row) {
-                is ItemRow -> Box(modifier) {
-                    when (val item = row.item) {
-                        is TabItem -> SwipeTab(vm, item, space.uuid, depth = 0, gestures = gestures, onOpen = onClose)
-                        is FolderItem -> FolderEntry(vm, item, space.uuid, prefs, gestures, onClose)
-                    }
-                }
-                DividerRow -> Row(modifier.fillMaxWidth().height(28.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)))
-                    if (space.regularTabs.isNotEmpty()) {
-                        Text(
-                            "↓ Clear",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs(space.uuid) }
-                                .padding(start = 8.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
-                        )
-                    }
-                }
-                NewTabRow -> Row(
-                    modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable {
-                        onClose()
-                        vm.openLauncher()
-                    }.padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(zenIcon("plus"), null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
-                    Text("New Tab", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurface)
-                }
-            }
-        }
+        val divider = rows.indexOf(DividerRow)
+        items(rows.take(divider), key = { it.key }) { row -> SidebarRow(row) }
+        item(key = FILLER_KEY) { Spacer(Modifier.height(with(LocalDensity.current) { filler.toDp() })) }
+        items(rows.drop(divider), key = { it.key }) { row -> SidebarRow(row) }
     }
 }
 
 /** Tap the name to rename the space (synced); tap the icon or chevron to fold its pinned tabs away. */
 @Composable
-private fun SpaceHeader(space: Space, collapsed: Boolean, onToggle: () -> Unit, onRename: (String) -> Unit) {
+private fun SpaceHeader(space: Space, collapsed: Boolean, gestures: SidebarGestures, onToggle: () -> Unit, onRename: (String) -> Unit) {
     var editing by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(gestures.renameSpace) {
+        if (gestures.renameSpace == space.uuid) {
+            editing = true
+            gestures.renameSpace = null
+        }
+    }
     var field by remember(space.name) { mutableStateOf(TextFieldValue(space.name)) }
     val focus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -650,7 +706,10 @@ private fun SpaceHeader(space: Space, collapsed: Boolean, onToggle: () -> Unit, 
         }
         if (editing) {
             fun commit() {
+                if (!editing) return
                 editing = false
+                focused = false
+                gestures.editingTitle = null
                 focusManager.clearFocus()
                 if (field.text.isNotBlank() && field.text != space.name) onRename(field.text)
             }
@@ -666,7 +725,14 @@ private fun SpaceHeader(space: Space, collapsed: Boolean, onToggle: () -> Unit, 
                 cursorBrush = SolidColor(onSurface),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { commit() }),
-                modifier = Modifier.weight(1f).padding(start = 6.dp).focusRequester(focus),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(start = 6.dp)
+                    .focusRequester(focus)
+                    .onGloballyPositioned { gestures.editingTitle = it.boundsInRoot() }
+                    .onFocusChanged {
+                        if (it.isFocused) focused = true else if (focused) commit()
+                    },
             )
         } else {
             Text(
@@ -887,43 +953,16 @@ private fun BoxScope.HoldOverlay(gestures: SidebarGestures, origin: Offset) {
         enter = scaleIn(spring(dampingRatio = 0.72f, stiffness = 520f), initialScale = 0.6f, transformOrigin = pivot) + fadeIn(tween(120)),
         exit = scaleOut(tween(140), targetScale = 0.8f, transformOrigin = pivot) + fadeOut(tween(140)),
     ) {
-        Surface(
-            Modifier
-                .width(230.dp)
-                .onGloballyPositioned {
-                    menuHeight = it.size.height
-                    gestures.menuRect = it.boundsInRoot()
-                },
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            shadowElevation = 16.dp,
-        ) {
-            Column(Modifier.padding(vertical = 4.dp)) {
-                gestures.actions.forEachIndexed { index, action ->
-                    val hovered = gestures.hovered == index
-                    val tint = if (action.destructive) Color(0xFFE5484D) else MaterialTheme.colorScheme.onSurface
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { gestures.actionRects[index] = it.boundsInRoot() }
-                            .background(if (hovered) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f) else Color.Transparent)
-                            .clickable {
-                                gestures.closeAll()
-                                action.run()
-                            }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(action.label, Modifier.weight(1f), color = tint, style = MaterialTheme.typography.bodyLarge)
-                        if (action.icon == "edit") {
-                            Icon(Icons.Default.Edit, null, Modifier.size(17.dp), tint = tint)
-                        } else {
-                            Icon(zenIcon(action.icon), null, Modifier.size(17.dp), tint = tint)
-                        }
-                    }
-                }
-            }
+        MenuCard(
+            gestures.actions,
+            gestures.select,
+            Modifier.onGloballyPositioned {
+                menuHeight = it.size.height
+                gestures.menuRect = it.boundsInRoot()
+            },
+        ) { action ->
+            gestures.closeAll()
+            action.run()
         }
     }
 }
@@ -951,6 +990,8 @@ private fun SidebarFooter(
     status: SyncStatus,
     onPick: (Int) -> Unit,
     onLibrary: () -> Unit,
+    spaceMenu: HoldMenuState,
+    menuFor: (Int) -> List<MenuAction>,
     onPrivate: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -962,7 +1003,7 @@ private fun SidebarFooter(
             horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(spaces.size) { i -> SpaceDot(spaces[i], i == current) { onPick(i) } }
+            items(spaces.size) { i -> SpaceDot(spaces[i], i == current, Modifier.holdMenu(spaceMenu) { menuFor(i) }) { onPick(i) } }
         }
         // Sync runs on its own, like desktop; only a failure shows up here.
         if (status is SyncStatus.Failed) {
@@ -973,11 +1014,11 @@ private fun SidebarFooter(
 }
 
 @Composable
-private fun SpaceDot(space: Space, selected: Boolean, onClick: () -> Unit) {
+private fun SpaceDot(space: Space, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val tint = if (selected) onSurface else onSurface.copy(alpha = onSurface.alpha * 0.5f)
     Box(
-        Modifier
+        modifier
             .size(34.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) toolbarElementBackground() else Color.Transparent)

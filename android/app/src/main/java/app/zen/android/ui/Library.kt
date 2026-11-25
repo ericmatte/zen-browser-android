@@ -1,8 +1,8 @@
 package app.zen.android.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +71,7 @@ private fun dayLabel(time: Long, today: Long): String = when {
 
 /** Port of the library's History section (src/zen/library/sections/ZenLibraryHistorySection.mjs). */
 @Composable
-fun LibraryScreen(vm: BrowserViewModel, dark: Boolean) {
+fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
     BackHandler { vm.showLibrary = false }
     val theme = vm.space(vm.activeSpace)?.theme
     val spec = remember(theme, dark) { ZenGradient.spec(theme, dark) }
@@ -83,6 +83,8 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean) {
     var whenFilter by remember { mutableStateOf(HistoryWhen.ANY) }
     var sort by remember { mutableStateOf(HistorySort.DATE) }
     var revision by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val visitMenu = remember { HoldMenuState() }
     val today = startOfToday()
     val entries = remember(query, whenFilter, sort, revision) {
         val since = whenFilter.days?.let { if (it == 0) today else System.currentTimeMillis() - it * 86_400_000L }
@@ -150,22 +152,33 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean) {
                                 }
                             }
                             items(visits, key = { "v:${header}:${it.url}" }) { visit ->
+                                fun open() {
+                                    vm.showLibrary = false
+                                    vm.newTab(visit.url)
+                                    onOpened()
+                                }
                                 VisitRow(
                                     visit,
-                                    onOpen = {
-                                        vm.showLibrary = false
-                                        vm.newTab(visit.url)
+                                    Modifier.holdMenu(visitMenu) {
+                                        listOf(
+                                            MenuAction("open", "Open") { open() },
+                                            MenuAction("edit-copy", "Copy") {
+                                                copyToClipboard(context, visit.url)
+                                                vm.message = "Link copied"
+                                            },
+                                            MenuAction("trash", "Forget This Page", destructive = true) {
+                                                vm.forgetVisit(visit.url)
+                                                revision++
+                                            },
+                                        )
                                     },
-                                    onForget = {
-                                        vm.forgetVisit(visit.url)
-                                        revision++
-                                    },
-                                    onCopy = { vm.message = "Link copied" },
+                                    onOpen = ::open,
                                 )
                             }
                         }
                     }
                 }
+                HoldMenuHost(visitMenu)
             }
         }
     }
@@ -218,41 +231,27 @@ private fun FilterButton(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun VisitRow(visit: Visit, onOpen: () -> Unit, onForget: () -> Unit, onCopy: () -> Unit) {
-    val context = LocalContext.current
-    var menu by remember { mutableStateOf(false) }
-    Box {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .combinedClickable(onClick = onOpen, onLongClick = { menu = true })
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Favicon(visit.url, null, 22.dp)
-            Column(Modifier.padding(start = 16.dp)) {
-                Text(visit.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                Text(
-                    visit.url.removePrefix("https://").removePrefix("http://").removePrefix("www."),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        DropdownMenu(menu, { menu = false }, shape = RoundedCornerShape(14.dp)) {
-            DropdownMenuItem(text = { Text("Open") }, onClick = { menu = false; onOpen() })
-            DropdownMenuItem(text = { Text("Copy") }, onClick = {
-                menu = false
-                copyToClipboard(context, visit.url)
-                onCopy()
-            })
-            DropdownMenuItem(text = { Text("Forget This Page") }, onClick = { menu = false; onForget() })
+private fun VisitRow(visit: Visit, modifier: Modifier, onOpen: () -> Unit) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Favicon(visit.url, null, 22.dp)
+        Column(Modifier.padding(start = 16.dp)) {
+            Text(visit.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+            Text(
+                visit.url.removePrefix("https://").removePrefix("http://").removePrefix("www."),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

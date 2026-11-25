@@ -60,14 +60,23 @@ object ZenIconSet {
             val entry = json.getJSONObject(name)
             val paths = entry.getJSONArray("d")
             val viewport = entry.optInt("size", 512).toFloat()
+            val fillType = if (entry.optBoolean("evenodd")) PathFillType.EvenOdd else PathFillType.NonZero
+            val translate = entry.optJSONArray("translate")
+            fun nodes(d: String) = PathParser().parsePathString(d).toNodes()
             ImageVector.Builder(name, 24.dp, 24.dp, viewport, viewport).apply {
+                // Desktop SVGs with an offset viewBox (e.g. "4 4 24 24") carry the offset as a translation.
+                addGroup(translationX = translate?.getDouble(0)?.toFloat() ?: 0f, translationY = translate?.getDouble(1)?.toFloat() ?: 0f)
                 for (i in 0 until paths.length()) {
-                    addPath(
-                        pathData = PathParser().parsePathString(paths.getString(i)).toNodes(),
-                        pathFillType = if (entry.optBoolean("evenodd")) PathFillType.EvenOdd else PathFillType.NonZero,
-                        fill = SolidColor(Color.Black),
-                    )
+                    val clipped = paths.optJSONObject(i)
+                    if (clipped != null) {
+                        addGroup(clipPathData = nodes(clipped.getString("clip")))
+                        addPath(nodes(clipped.getString("d")), fillType, fill = SolidColor(Color.Black))
+                        clearGroup()
+                    } else {
+                        addPath(nodes(paths.getString(i)), fillType, fill = SolidColor(Color.Black))
+                    }
                 }
+                clearGroup()
             }.build()
         }
     }

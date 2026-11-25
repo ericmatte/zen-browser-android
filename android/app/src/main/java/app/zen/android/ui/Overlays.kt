@@ -63,7 +63,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoView
 
 @Composable
-fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean) {
+fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean, linkMenu: SlideSelect) {
     vm.glance?.let { GlanceOverlay(vm, it) }
 
     vm.loginSession?.let { login ->
@@ -79,7 +79,7 @@ fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean) {
         }
     }
 
-    ContextMenuSheet(vm)
+    ContextMenuSheet(vm, linkMenu)
 
     AnimatedVisibility(
         vm.showSettings,
@@ -87,14 +87,6 @@ fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean) {
         exit = slideOutHorizontally { it } + fadeOut(),
     ) {
         SettingsScreen(vm, dark)
-    }
-
-    AnimatedVisibility(
-        vm.showLibrary,
-        enter = slideInHorizontally { -it } + fadeIn(),
-        exit = slideOutHorizontally { -it } + fadeOut(),
-    ) {
-        LibraryScreen(vm, dark)
     }
 
     vm.requests.current?.let { PageDialog(it, onDone = vm.requests::resolved) }
@@ -186,7 +178,7 @@ private fun GlanceOverlay(vm: BrowserViewModel, session: GeckoSession) {
 }
 
 @Composable
-private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel) {
+private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect) {
     val context = LocalContext.current
     val current = vm.contextMenu
     var shown by remember { mutableStateOf<GeckoSession.ContentDelegate.ContextElement?>(null) }
@@ -231,20 +223,20 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel) {
                 )
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 if (link != null) {
-                    if (vm.settings.state.value.glance) MenuRow("open", "Glance") { act { vm.openGlance(link) } }
-                    if (!vm.privateMode) MenuRow("plus", "Open in new tab") { act { vm.newTab(link) } }
-                    MenuRow("privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
-                    MenuRow("link", "Copy link") {
+                    if (vm.settings.state.value.glance) MenuRow(select, "open", "Glance") { act { vm.openGlance(link) } }
+                    if (!vm.privateMode) MenuRow(select, "plus", "Open in new tab") { act { vm.newTab(link) } }
+                    MenuRow(select, "privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
+                    MenuRow(select, "link", "Copy link") {
                         act {
                             copyToClipboard(context, link)
                             vm.message = "Link copied"
                         }
                     }
-                    MenuRow("share", "Share link") { act { share(context, link) } }
+                    MenuRow(select, "share", "Share link") { act { share(context, link) } }
                 }
                 if (media != null && element.type == GeckoSession.ContentDelegate.ContextElement.TYPE_IMAGE) {
-                    MenuRow("open", "Open image") { act { vm.newTab(media) } }
-                    MenuRow("edit-copy", "Copy image address") {
+                    MenuRow(select, "open", "Open image") { act { vm.newTab(media) } }
+                    MenuRow(select, "edit-copy", "Copy image address") {
                         act {
                             copyToClipboard(context, media)
                             vm.message = "Image address copied"
@@ -257,9 +249,14 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel) {
 }
 
 @Composable
-private fun MenuRow(icon: String, label: String, onClick: () -> Unit) {
+private fun MenuRow(select: SlideSelect, icon: String, label: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
+        Modifier
+            .fillMaxWidth()
+            .slideTarget(select, label, onClick)
+            .background(if (select.hovered == label) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(zenIcon(icon), null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)

@@ -38,11 +38,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -63,7 +65,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -108,7 +109,10 @@ import kotlin.math.abs
 val EditBarHeight = 58.dp
 
 /** At rest the bar leaves this share of the screen width free on each side. */
-const val BarSideInset = 0.125f
+const val BarSideInset = 0.05f
+
+/** In landscape the resting strip leaves this share of the screen height free above and below. */
+const val SideBarInset = 0.125f
 
 /** Left-edge insets (cutout, landscape navigation bar) the vertical bar sits over. */
 val SideBarInsets: WindowInsets
@@ -129,12 +133,14 @@ fun BottomChrome(
     onSidebar: () -> Unit,
     recents: RecentsMenu,
     swipe: PageSwipe,
-    menu: MutableState<Boolean>,
+    menu: BarMenuState,
     landscape: Boolean,
     modifier: Modifier,
 ) {
     val searching = vm.launcherOpen
-    val active = editing || searching
+    val finding = vm.findQuery != null
+    val typing = editing || searching
+    val active = typing || finding
     val focusManager = LocalFocusManager.current
 
     fun finish() {
@@ -147,9 +153,9 @@ fun BottomChrome(
     // Hiding the keyboard (back gesture, keyboard button) is how a phone says "blur".
     val imeVisible = WindowInsets.isImeVisible
     var imeSeen by remember { mutableStateOf(false) }
-    LaunchedEffect(active, imeVisible) {
+    LaunchedEffect(typing, imeVisible) {
         when {
-            !active -> imeSeen = false
+            !typing -> imeSeen = false
             imeVisible -> imeSeen = true
             imeSeen -> {
                 imeSeen = false
@@ -158,14 +164,17 @@ fun BottomChrome(
         }
     }
 
-    val dock by animateFloatAsState(if (active) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
+    // A web page's own text field took the keyboard: the bar steps aside with it.
+    val webKeyboard = imeVisible && !active
+    // Docks only once the keyboard is really up, so the bar never drops to the screen edge while waiting for it.
+    val dock by animateFloatAsState(if (active && imeVisible) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 420f), label = "dock")
     Box(modifier.fillMaxSize()) {
         if (editing && !searching) {
             Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { finish() })
         }
         if (landscape) {
             AnimatedVisibility(
-                visible = !active,
+                visible = !active && !webKeyboard,
                 modifier = Modifier.align(Alignment.CenterStart),
                 enter = slideInHorizontally(spring(dampingRatio = 0.9f, stiffness = 420f)) { -it },
                 exit = slideOutHorizontally(tween(160)) { -it },
@@ -178,18 +187,18 @@ fun BottomChrome(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             AnimatedVisibility(
-                active && vm.suggestions.isNotEmpty(),
+                typing && vm.suggestions.isNotEmpty(),
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
             ) {
                 SuggestionsPanel(vm, inNewTab = searching) { onEditingChange(false) }
             }
             AnimatedVisibility(
-                visible = active || (!landscape && vm.chromeVisible),
+                visible = active || (!landscape && vm.chromeVisible && !webKeyboard),
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut(),
             ) {
-                AddressBar(vm, active, searching, if (landscape) 1f else dock, ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
+                AddressBar(vm, typing, searching, finding, if (landscape) 1f else dock, ::finish, { onEditingChange(true) }, onSidebar, recents, swipe, menu)
             }
         }
     }
@@ -200,13 +209,14 @@ private fun AddressBar(
     vm: BrowserViewModel,
     editing: Boolean,
     searching: Boolean,
+    finding: Boolean,
     dock: Float,
     onCancel: () -> Unit,
     onEdit: () -> Unit,
     onSidebar: () -> Unit,
     recents: RecentsMenu,
     swipe: PageSwipe,
-    menu: MutableState<Boolean>,
+    menu: BarMenuState,
 ) {
     val context = LocalContext.current
     val haptics = LocalHapticFeedback.current
@@ -237,7 +247,9 @@ private fun AddressBar(
         solidity = dock,
     ) {
         Row(Modifier.fillMaxSize().padding(horizontal = lerp(0.dp, 6.dp, dock)), verticalAlignment = Alignment.CenterVertically) {
-            if (editing) {
+            if (finding) {
+                FindContent(vm)
+            } else if (editing) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                     Icon(zenIcon("search-glass"), null, Modifier.size(18.dp), tint = onSurface.copy(alpha = 0.7f))
                 }
@@ -289,6 +301,7 @@ private fun AddressBar(
                 }
             } else {
                 SidebarButton(vm, onSidebar, recents)
+                if (vm.hasPage) SiteIdentity(vm)
                 TitleLabel(
                     vm = vm,
                     modifier = Modifier
@@ -300,7 +313,7 @@ private fun AddressBar(
                 IconButton(onClick = vm::openLauncher) {
                     Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
                 }
-                IconButton(onClick = { menu.value = !menu.value }) { Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = onSurface) }
+                MenuButton(menu)
             }
         }
         if (vm.progress in 1..99) {
@@ -315,10 +328,10 @@ private fun AddressBar(
 
 /** Landscape resting bar: glued to the left edge, title running sideways, icons kept upright. */
 @Composable
-private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> Unit, recents: RecentsMenu, menu: MutableState<Boolean>) {
+private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> Unit, recents: RecentsMenu, menu: BarMenuState) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     GlassSurface(
-        modifier = Modifier.fillMaxHeight(1f - 2 * BarSideInset),
+        modifier = Modifier.fillMaxHeight(1f - 2 * SideBarInset),
         shape = RoundedCornerShape(topEnd = 26.dp, bottomEnd = 26.dp),
         tint = if (vm.privateMode) PrivateTint else null,
     ) {
@@ -327,6 +340,7 @@ private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> U
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
+            if (vm.hasPage) SiteIdentity(vm)
             Box(
                 Modifier
                     .weight(1f)
@@ -339,7 +353,7 @@ private fun SideBar(vm: BrowserViewModel, onEdit: () -> Unit, onSidebar: () -> U
             IconButton(onClick = vm::openLauncher) {
                 Icon(zenIcon("plus"), "New tab", Modifier.size(18.dp), tint = onSurface)
             }
-            IconButton(onClick = { menu.value = !menu.value }) { Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = onSurface) }
+            MenuButton(menu)
         }
     }
 }
@@ -385,21 +399,41 @@ private fun Modifier.pageSwipe(vm: BrowserViewModel, swipe: PageSwipe): Modifier
 
 @Composable
 private fun TitleLabel(vm: BrowserViewModel, modifier: Modifier) {
-    val onSurface = MaterialTheme.colorScheme.onSurface
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-        if (vm.url.startsWith("http") && !vm.secure) {
-            Icon(zenIcon("security-broken"), "Not secure", Modifier.size(13.dp), tint = MaterialTheme.colorScheme.error)
-            Spacer(Modifier.width(6.dp))
-        }
         Text(
             text = vm.title.ifBlank { UrlInput.display(vm.url) }.ifEmpty { "Search or enter address" },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Medium,
-            color = onSurface,
+            color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+val SecureGreen = Color(0xFF2EB872)
+
+/** The page's favicon with a small lock: green and closed on HTTPS, red and open otherwise. */
+@Composable
+private fun SiteIdentity(vm: BrowserViewModel) {
+    val web = vm.url.startsWith("http")
+    val secure = !web || vm.secure
+    Box(Modifier.padding(end = 6.dp).size(24.dp)) {
+        Favicon(vm.url, null, 20.dp)
+        if (web) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 3.dp, y = 3.dp)
+                    .size(13.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(if (secure) SecureGreen else MaterialTheme.colorScheme.error),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(zenIcon(if (secure) "security" else "security-broken"), if (secure) "Secure" else "Not secure", Modifier.size(8.dp), tint = Color.White)
+            }
+        }
     }
 }
 
@@ -446,7 +480,7 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(zenIcon("sidebar"), "Spaces", Modifier.size(20.dp), tint = tint)
+        Icon(zenIcon(if (vm.privateMode) "privateBrowsing" else "sidebar"), if (vm.privateMode) "Private tabs" else "Spaces", Modifier.size(20.dp), tint = tint)
     }
 }
 
@@ -534,14 +568,56 @@ fun RecentsPopover(recents: RecentsMenu, modifier: Modifier) {
     }
 }
 
+class BarMenuState {
+    var open by mutableStateOf(false)
+    val select = SlideSelect()
+}
+
+/** Tap toggles the "⋯" menu; holding it opens the menu and the finger can slide onto an entry, like iOS. */
+@Composable
+private fun MenuButton(menu: BarMenuState) {
+    val haptics = LocalHapticFeedback.current
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    Box(
+        Modifier
+            .size(48.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .onGloballyPositioned { origin = it.positionInRoot() }
+            .pointerInput(menu) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    var lifted = false
+                    val tapped = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        val up = waitForUpOrCancellation()
+                        lifted = true
+                        up != null
+                    }
+                    if (lifted) {
+                        if (tapped == true) menu.open = !menu.open
+                        return@awaitEachGesture
+                    }
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    menu.select.reset()
+                    menu.open = true
+                    val moved = followHeldFinger(down.id, { origin }, menu.select, haptics)
+                    val action = menu.select.take()
+                    if (action != null) action() else if (moved) menu.open = false
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(zenIcon("menu"), "More", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+    }
+}
+
 /** The "⋯" menu, anchored just above the bar (the system dropdown keeps a 48dp gap from screen edges). */
 @Composable
-fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifier) {
+fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, modifier: Modifier) {
     val context = LocalContext.current
     fun close() {
-        open.value = false
+        menu.open = false
     }
-    if (open.value) {
+    if (menu.open) {
         androidx.activity.compose.BackHandler { close() }
         Box(
             Modifier
@@ -549,8 +625,9 @@ fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifie
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() },
         )
     }
+    val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
     AnimatedVisibility(
-        open.value,
+        menu.open,
         modifier = modifier,
         enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 600f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeIn(tween(120)),
         exit = scaleOut(tween(130), targetScale = 0.85f, transformOrigin = TransformOrigin(0.9f, 1f)) + fadeOut(tween(130)),
@@ -563,34 +640,49 @@ fun BarMenu(vm: BrowserViewModel, open: MutableState<Boolean>, modifier: Modifie
             shadowElevation = 14.dp,
         ) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    IconButton(onClick = { close(); vm.goBack() }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp)) }
-                    IconButton(onClick = { close(); vm.goForward() }) { Icon(zenIcon("forward"), "Forward", Modifier.size(18.dp)) }
-                    IconButton(onClick = { close(); vm.reload() }) {
-                        Icon(zenIcon(if (vm.progress in 1..99) "close" else "reload"), "Reload", Modifier.size(18.dp))
+                @Composable
+                fun Nav(icon: String, label: String, action: () -> Unit) {
+                    val run = {
+                        close()
+                        action()
                     }
-                    IconButton(onClick = { close(); share(context, vm.url) }) { Icon(zenIcon("share"), "Share", Modifier.size(18.dp)) }
+                    Box(
+                        Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .slideTarget(menu.select, label, run)
+                            .background(if (menu.select.hovered == label) highlight else Color.Transparent)
+                            .clickable(onClick = run),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(zenIcon(icon), label, Modifier.size(18.dp)) }
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Nav("back", "Back") { vm.goBack() }
+                    Nav("forward", "Forward") { vm.goForward() }
+                    Nav(if (vm.progress in 1..99) "close" else "reload", "Reload") { vm.reload() }
+                    Nav("share", "Share") { share(context, vm.url) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
                 fun Item(label: String, icon: String, action: () -> Unit) {
+                    val run = {
+                        close()
+                        action()
+                    }
                     Row(
-                        Modifier.fillMaxWidth().clickable {
-                            close()
-                            action()
-                        }.padding(horizontal = 18.dp, vertical = 12.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .slideTarget(menu.select, label, run)
+                            .background(if (menu.select.hovered == label) highlight else Color.Transparent)
+                            .clickable(onClick = run)
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(zenIcon(icon), null, Modifier.size(18.dp))
                         Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
                     }
                 }
-                Item("New tab", "plus") { vm.openLauncher() }
                 Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
-                Item("Copy link", "link") {
-                    copyToClipboard(context, vm.url)
-                    vm.message = "Link copied"
-                }
                 Item("Find in page", "search-page") { vm.startFind() }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
                 Item("History", "history") { vm.showLibrary = true }
@@ -659,33 +751,33 @@ fun SuggestionRow(suggestion: Suggestion, onClick: () -> Unit) {
     }
 }
 
+/** Find in page: the bar itself turns into the find field, with the match count and arrows. */
 @Composable
-fun FindBar(vm: BrowserViewModel, modifier: Modifier) {
+private fun RowScope.FindContent(vm: BrowserViewModel) {
     val focus = remember { FocusRequester() }
     val onSurface = MaterialTheme.colorScheme.onSurface
-    GlassSurface(modifier.padding(12.dp).fillMaxWidth().height(48.dp), shape = RoundedCornerShape(24.dp), solidity = 1f) {
-        Row(Modifier.fillMaxSize().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            BasicTextField(
-                value = vm.findQuery.orEmpty(),
-                onValueChange = { vm.find(it) },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(color = onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardActions = KeyboardActions(onSearch = { vm.find(vm.findQuery.orEmpty()) }),
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.weight(1f).focusRequester(focus),
-                decorationBox = { inner ->
-                    Box(contentAlignment = Alignment.CenterStart) {
-                        if (vm.findQuery.isNullOrEmpty()) Text("Find in page", color = onSurface.copy(alpha = 0.5f))
-                        inner()
-                    }
-                },
-            )
-            Text(vm.findResult, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = { vm.find(vm.findQuery.orEmpty(), backwards = true) }) { Icon(Icons.Default.KeyboardArrowUp, "Previous") }
-            IconButton(onClick = { vm.find(vm.findQuery.orEmpty()) }) { Icon(Icons.Default.KeyboardArrowDown, "Next") }
-            IconButton(onClick = vm::endFind) { Icon(zenIcon("close"), "Close find", Modifier.size(16.dp)) }
-        }
+    Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+        Icon(zenIcon("search-page"), null, Modifier.size(18.dp), tint = onSurface)
     }
+    BasicTextField(
+        value = vm.findQuery.orEmpty(),
+        onValueChange = { vm.find(it) },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyLarge.copy(color = onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardActions = KeyboardActions(onSearch = { vm.find(vm.findQuery.orEmpty()) }),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        modifier = Modifier.weight(1f).focusRequester(focus),
+        decorationBox = { inner ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                if (vm.findQuery.isNullOrEmpty()) Text("Find in page", color = onSurface.copy(alpha = 0.5f))
+                inner()
+            }
+        },
+    )
+    Text(vm.findResult, style = MaterialTheme.typography.labelMedium, color = onSurface.copy(alpha = 0.7f))
+    IconButton(onClick = { vm.find(vm.findQuery.orEmpty(), backwards = true) }) { Icon(Icons.Default.KeyboardArrowUp, "Previous", tint = onSurface) }
+    IconButton(onClick = { vm.find(vm.findQuery.orEmpty()) }) { Icon(Icons.Default.KeyboardArrowDown, "Next", tint = onSurface) }
+    IconButton(onClick = vm::endFind) { Icon(zenIcon("close"), "Close find", Modifier.size(16.dp), tint = onSurface) }
     LaunchedEffect(Unit) { focus.requestFocus() }
 }
