@@ -49,7 +49,7 @@ The app reuses desktop code or ports it closely:
 - Only pinned tabs, folders and spaces sync. Temporary (unpinned) tabs stay
   where they were opened: desktop's never show on the phone, and the phone's
   never reach desktop. The phone keeps one temporary list shared by every
-  space; "Clear" empties it and idle ones close after a chosen time. Pinning a
+  space, fixed at the bottom while the spaces above swipe by; "Clear" empties it and idle ones close after a chosen time. Pinning a
   phone tab syncs it into the space shown; unpinning a synced tab takes it off
   desktop and into the phone's list.
 - Sync runs on its own: at launch, on resume, when the sidebar opens, after

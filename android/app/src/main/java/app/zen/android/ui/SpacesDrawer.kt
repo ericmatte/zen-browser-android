@@ -1,5 +1,8 @@
 package app.zen.android.ui
 
+import androidx.compose.ui.composed
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -216,8 +219,15 @@ fun SpacesSidebar(
                     if (spaces.isEmpty()) {
                         EmptySpaces(status, vm::beginLogin, Modifier.weight(1f))
                     } else {
-                        HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { spaces[it].uuid }, beyondViewportPageCount = 1) { page ->
-                            SpacePage(vm, spaces[page], page == pager.currentPage, prefs, gestures, onClose, onRenameFolder = { renaming = it })
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            val maxTemporary = maxHeight * 0.6f
+                            Column(Modifier.fillMaxSize()) {
+                                HorizontalPager(state = pager, modifier = Modifier.weight(1f), key = { spaces[it].uuid }, beyondViewportPageCount = 1) { page ->
+                                    SpacePage(vm, spaces[page], page == pager.currentPage, prefs, gestures, onClose, onRenameFolder = { renaming = it })
+                                }
+                                val current = spaces[pager.currentPage.coerceIn(0, spaces.lastIndex)]
+                                TemporaryTabs(vm, current, prefs, gestures, onClose, onRenameFolder = { renaming = it }, Modifier.fillMaxWidth().heightIn(max = maxTemporary))
+                            }
                         }
                     }
 
@@ -312,6 +322,9 @@ class SidebarGestures {
     var grab = Offset.Zero
         private set
     var renameSpace by mutableStateOf<String?>(null)
+    /** The landing gap of a drag, shared by the space's pinned list and the fixed temporary list. */
+    internal var gap by mutableStateOf<DropGap?>(null)
+    var temporaryRect = Rect.Zero
     val reveal = RevealGroup()
     var editingTitle: Rect? = null
     var overEssentials by mutableStateOf(false)
@@ -500,8 +513,6 @@ private data object DividerRow : Row {
     override val key = "__divider"
 }
 
-private const val FILLER_KEY = "__filler"
-
 internal val SidebarRowHeight = 46.dp
 internal val SidebarIconSize = 20.dp
 private val SidebarFolderIconSize = 24.dp
@@ -524,7 +535,7 @@ private fun itemOf(held: Held): SidebarItem = when (held) {
 }
 
 /** A gap opened at [target] (index among the rows without [heldKey]) for a dragged row [height] px tall. */
-private data class DropGap(val heldKey: String, val from: Int, val target: Int, val height: Float)
+internal data class DropGap(val heldKey: String, val from: Int, val target: Int, val height: Float)
 
 /** Where a dragged row would land: the edit to send, and its index among the other rows. */
 private fun dropTarget(space: Space, rows: List<Row>, gestures: SidebarGestures, held: Held, y: Float): Pair<LocalEdit.MoveItem?, Int> {
@@ -561,184 +572,236 @@ private fun SpacePage(
     onClose: () -> Unit,
     onRenameFolder: (FolderItem) -> Unit,
 ) {
-    val context = LocalContext.current
-    val haptics = LocalHapticFeedback.current
-    val slop = with(LocalDensity.current) { 28.dp.toPx() }
     val collapsed = space.uuid in prefs.collapsedSpaces
     val rows = remember(space, collapsed) { rowsOf(space, collapsed) }
     val listState = rememberLazyListState()
     var listOrigin by remember { mutableStateOf(Offset.Zero) }
-    val held = gestures.held
-    // The bottom gap is measured after the first layout; until then rows neither animate nor show, so they appear in place.
-    var settled by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        withFrameNanos { }
-        withFrameNanos { }
-        settled = true
-    }
-
-    // Temporary tabs sit at the bottom, within thumb reach; the gap above them absorbs the spare height.
-    val filler by remember {
-        derivedStateOf {
-            val info = listState.layoutInfo
-            val visible = info.visibleItemsInfo
-            if (visible.size < info.totalItemsCount) {
-                0
-            } else {
-                val used = visible.filter { it.key != FILLER_KEY }.sumOf { it.size }
-                (info.viewportEndOffset - info.viewportStartOffset - info.beforeContentPadding - info.afterContentPadding - used).coerceAtLeast(0)
-            }
-        }
-    }
-
-    // Kept after the drop until the moved rows arrive from the store, so nothing jumps back meanwhile.
-    var gap by remember { mutableStateOf<DropGap?>(null) }
-    LaunchedEffect(rows) { gap = null }
-    LaunchedEffect(gap != null, gestures.dragging) {
-        if (gap != null && !gestures.dragging) {
-            delay(1200)
-            gap = null
-        }
-    }
-    // Folders resize their own item and drags shift rows by hand; a placement spring on top would make
-    // rows trail behind at their own pace, so it only plays for other changes (a tab closing, a sync).
-    var quietPlacement by remember { mutableStateOf(false) }
-    LaunchedEffect(prefs.expandedFolders, gestures.dragging, gap) {
-        quietPlacement = true
-        delay(400)
-        quietPlacement = gestures.dragging || gap != null
-    }
-
-    @Composable
-    fun LazyItemScope.SidebarRow(row: Row) {
-        val lifted = (held?.key == row.key && gestures.dragging) || gap?.heldKey == row.key
-        val shift = gap?.let { g ->
-            if (row.key == g.heldKey) return@let 0f
-            val index = rows.filter { it.key != g.heldKey }.indexOf(row)
-            DragGap.slots(index, g.from, g.target) * g.height
-        } ?: 0f
-        val offset by animateFloatAsState(shift, if (gap != null) spring(dampingRatio = 0.9f, stiffness = 700f) else snap(), label = "gap")
-        val modifier = Modifier
-            .then(if (settled) Modifier.animateItem(placementSpec = if (quietPlacement) null else spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold)) else Modifier)
-            .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
-            .graphicsLayer {
-                translationY = offset
-                alpha = if (!settled || lifted) 0f else 1f
-            }
-        when (row) {
-            is ItemRow -> Box(modifier) {
-                when (val item = row.item) {
-                    is TabItem -> SwipeTab(vm, item, space.uuid, depth = 0, gestures = gestures, onOpen = onClose)
-                    is FolderItem -> FolderEntry(vm, item, space.uuid, prefs, gestures, onClose)
-                }
-            }
-            DividerRow -> Row(modifier.fillMaxWidth().height(28.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)))
-                if (space.regularTabs.isNotEmpty()) {
-                    val muted = MaterialTheme.colorScheme.onSurfaceVariant
-                    Row(
-                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs() }
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(zenIcon("dart-down"), null, Modifier.size(14.dp), tint = muted)
-                        Text("Clear", Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = muted)
-                    }
-                }
-            }
-            // Laid out exactly like a tab row, so its icon and label line up with the tabs above.
-            NewTabRow -> Row(
-                modifier.fillMaxWidth().height(SidebarRowHeight).clip(RoundedCornerShape(10.dp)).clickable {
-                    onClose()
-                    vm.openLauncher()
-                }.padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(SidebarIconSize), contentAlignment = Alignment.Center) {
-                    Icon(zenIcon("plus"), null, Modifier.size(SidebarIconSize - 2.dp), tint = MaterialTheme.colorScheme.onSurface)
-                }
-                Text("New Tab", Modifier.padding(start = SidebarIconGap), style = sidebarText(), color = MaterialTheme.colorScheme.onSurface)
-            }
-        }
-    }
+    val motion = rememberRowMotion(prefs, gestures)
 
     // Pulling the list down from its top asks the server for desktop's latest changes right away.
     val pull = remember { PullState() }
     val syncing = vm.status.collectAsStateWithLifecycle().value == SyncStatus.Syncing
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
     Box(Modifier.fillMaxSize().pullToRefresh(pull, { atTop && gestures.held == null }, { vm.syncNow() })) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned {
+                    listOrigin = it.positionInRoot()
+                    // The pager keeps a neighbour page composed; only the visible one owns the drop area.
+                    if (isCurrent) gestures.listRect = it.boundsInRoot()
+                }
+                .sidebarHold(vm, space, rows, prefs, gestures, listState, { listOrigin }, onRenameFolder),
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 8.dp),
+        ) {
+            item(key = "__header") {
+                SpaceHeader(space, collapsed, gestures, onToggle = { vm.settings.toggleSpaceCollapsed(space.uuid) }, onRename = { vm.renameSpace(space.uuid, it) })
+            }
+            items(rows.take(rows.indexOf(DividerRow)), key = { it.key }) { row -> SidebarRow(vm, row, rows, space, prefs, gestures, motion, onClose) }
+        }
+        PullIndicator(pull, syncing, Modifier.align(Alignment.TopCenter))
+    }
+}
+
+/**
+ * The phone's temporary tabs are one list shared by every space, so they sit
+ * below the pager and stay put while the spaces above slide by.
+ */
+@Composable
+private fun TemporaryTabs(
+    vm: BrowserViewModel,
+    space: Space,
+    prefs: Preferences,
+    gestures: SidebarGestures,
+    onClose: () -> Unit,
+    onRenameFolder: (FolderItem) -> Unit,
+    modifier: Modifier,
+) {
+    val collapsed = space.uuid in prefs.collapsedSpaces
+    val rows = remember(space, collapsed) { rowsOf(space, collapsed) }
+    val listState = rememberLazyListState()
+    var listOrigin by remember { mutableStateOf(Offset.Zero) }
+    val motion = rememberRowMotion(prefs, gestures)
+    LaunchedEffect(rows) { gestures.gap = null }
+    // New tabs join at the bottom, next to the thumb; keep them in view.
+    LaunchedEffect(space.regularTabs.size) { listState.scrollToItem((rows.size - rows.indexOf(DividerRow) - 1).coerceAtLeast(0)) }
     LazyColumn(
         state = listState,
-        modifier = Modifier
-            .fillMaxSize()
+        modifier = modifier
             .onGloballyPositioned {
                 listOrigin = it.positionInRoot()
-                // The pager keeps a neighbour page composed; only the visible one owns the drop area.
-                if (isCurrent) gestures.listRect = it.boundsInRoot()
+                gestures.temporaryRect = it.boundsInRoot()
             }
-            .pointerInput(space, collapsed, prefs.expandedFolders) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    val long = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
-                    val target = gestures.hit(listOrigin + long.position) ?: return@awaitEachGesture
-                    if (target is HeldEssential) return@awaitEachGesture
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    val menu = when (target) {
-                        is HeldTab -> tabMenu(vm, target.tab, space.uuid, context)
-                        is HeldFolder -> listOf(
-                            MenuAction("folder", if (target.folder.id in prefs.expandedFolders) "Collapse Folder" else "Expand Folder") {
-                                vm.settings.toggleFolder(target.folder.id)
-                            },
-                            MenuAction("edit", "Rename Folder") { onRenameFolder(target.folder) },
-                        )
-                        is HeldEssential -> emptyList()
-                    }
-                    gestures.begin(target, menu, listOrigin + long.position)
-                    var edit: LocalEdit.MoveItem? = null
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        change.consume()
-                        val point = listOrigin + change.position
-                        if (gestures.move(point, slop)) haptics.performHapticFeedback(MenuHoverTick)
-                        if (gestures.dragging) {
-                            val rect = gestures.listRect
-                            val edge = 64.dp.toPx()
-                            if (point.y < rect.top + edge && point.y > rect.top) listState.dispatchRawDelta(-14f)
-                            if (point.y > rect.bottom - edge) listState.dispatchRawDelta(14f)
-                            if (rect.contains(point) && !gestures.overEssentials) {
-                                val (next, index) = dropTarget(space, rows, gestures, target, point.y)
-                                edit = next
-                                val height = gestures.rowRects[target.key]?.takeIf { rows.any { it.key == target.key } }?.height ?: target.bounds.height
-                                gap = DropGap(target.key, rows.indexOfFirst { it.key == target.key }, index, height)
-                            } else {
-                                edit = null
-                                gap = null
-                            }
-                        }
-                        if (!change.pressed) break
-                    }
-                    val toEssentials = gestures.dragging && gestures.overEssentials
-                    if (edit == null || toEssentials) gap = null
-                    val chosen = gestures.release()
-                    when {
-                        chosen != null -> chosen()
-                        toEssentials && target is HeldTab -> vm.addEssential(target.tab)
-                        edit != null -> vm.move(edit!!)
-                    }
-                }
-            },
+            .sidebarHold(vm, space, rows, prefs, gestures, listState, { listOrigin }, onRenameFolder),
         contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 12.dp),
     ) {
-        item(key = "__header") {
-            SpaceHeader(space, collapsed, gestures, onToggle = { vm.settings.toggleSpaceCollapsed(space.uuid) }, onRename = { vm.renameSpace(space.uuid, it) })
-        }
-        val divider = rows.indexOf(DividerRow)
-        items(rows.take(divider), key = { it.key }) { row -> SidebarRow(row) }
-        item(key = FILLER_KEY) { Spacer(Modifier.height(with(LocalDensity.current) { filler.toDp() })) }
-        items(rows.drop(divider), key = { it.key }) { row -> SidebarRow(row) }
+        items(rows.drop(rows.indexOf(DividerRow)), key = { it.key }) { row -> SidebarRow(vm, row, rows, space, prefs, gestures, motion, onClose) }
     }
-    PullIndicator(pull, syncing, Modifier.align(Alignment.TopCenter))
+}
+
+/** How rows move: no entrance animation on first layout, and no placement spring while folders or drags move them by hand. */
+private class RowMotion(val settled: Boolean, val quietPlacement: Boolean)
+
+@Composable
+private fun rememberRowMotion(prefs: Preferences, gestures: SidebarGestures): RowMotion {
+    var settled by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        withFrameNanos { }
+        settled = true
+    }
+    // Kept after the drop until the moved rows arrive from the store, so nothing jumps back meanwhile.
+    LaunchedEffect(gestures.gap != null, gestures.dragging) {
+        if (gestures.gap != null && !gestures.dragging) {
+            delay(1200)
+            gestures.gap = null
+        }
+    }
+    // Folders resize their own item and drags shift rows by hand; a placement spring on top would make
+    // rows trail behind at their own pace, so it only plays for other changes (a tab closing, a sync).
+    var quietPlacement by remember { mutableStateOf(false) }
+    LaunchedEffect(prefs.expandedFolders, gestures.dragging, gestures.gap) {
+        quietPlacement = true
+        delay(400)
+        quietPlacement = gestures.dragging || gestures.gap != null
+    }
+    return RowMotion(settled, quietPlacement)
+}
+
+@Composable
+private fun LazyItemScope.SidebarRow(
+    vm: BrowserViewModel,
+    row: Row,
+    rows: List<Row>,
+    space: Space,
+    prefs: Preferences,
+    gestures: SidebarGestures,
+    motion: RowMotion,
+    onClose: () -> Unit,
+) {
+    val gap = gestures.gap
+    val lifted = (gestures.held?.key == row.key && gestures.dragging) || gap?.heldKey == row.key
+    val shift = gap?.let { g ->
+        if (row.key == g.heldKey) return@let 0f
+        val index = rows.filter { it.key != g.heldKey }.indexOf(row)
+        DragGap.slots(index, g.from, g.target) * g.height
+    } ?: 0f
+    val offset by animateFloatAsState(shift, if (gap != null) spring(dampingRatio = 0.9f, stiffness = 700f) else snap(), label = "gap")
+    val modifier = Modifier
+        .then(if (motion.settled) Modifier.animateItem(placementSpec = if (motion.quietPlacement) null else spring(stiffness = Spring.StiffnessMediumLow, visibilityThreshold = IntOffset.VisibilityThreshold)) else Modifier)
+        .onGloballyPositioned { gestures.rowRects[row.key] = it.boundsInRoot() }
+        .graphicsLayer {
+            translationY = offset
+            alpha = if (!motion.settled || lifted) 0f else 1f
+        }
+    when (row) {
+        is ItemRow -> Box(modifier) {
+            when (val item = row.item) {
+                is TabItem -> SwipeTab(vm, item, space.uuid, depth = 0, gestures = gestures, onOpen = onClose)
+                is FolderItem -> FolderEntry(vm, item, space.uuid, prefs, gestures, onClose)
+            }
+        }
+        DividerRow -> Row(modifier.fillMaxWidth().height(28.dp).padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)))
+            if (space.regularTabs.isNotEmpty()) {
+                val muted = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs() }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(zenIcon("dart-down"), null, Modifier.size(14.dp), tint = muted)
+                    Text("Clear", Modifier.padding(start = 5.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = muted)
+                }
+            }
+        }
+        // Laid out exactly like a tab row, so its icon and label line up with the tabs above.
+        NewTabRow -> Row(
+            modifier.fillMaxWidth().height(SidebarRowHeight).clip(RoundedCornerShape(10.dp)).clickable {
+                onClose()
+                vm.openLauncher()
+            }.padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(SidebarIconSize), contentAlignment = Alignment.Center) {
+                Icon(zenIcon("plus"), null, Modifier.size(SidebarIconSize - 2.dp), tint = MaterialTheme.colorScheme.onSurface)
+            }
+            Text("New Tab", Modifier.padding(start = SidebarIconGap), style = sidebarText(), color = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/**
+ * The hold gesture of a sidebar list: a long press opens the item's menu;
+ * sliding away picks it up, and the rows of both lists open a gap where it
+ * would land. [rows] is the whole column (pinned items, separator, temporary tabs).
+ */
+private fun Modifier.sidebarHold(
+    vm: BrowserViewModel,
+    space: Space,
+    rows: List<Row>,
+    prefs: Preferences,
+    gestures: SidebarGestures,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    origin: () -> Offset,
+    onRenameFolder: (FolderItem) -> Unit,
+): Modifier = composed {
+    val context = LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val slop = with(LocalDensity.current) { 28.dp.toPx() }
+    pointerInput(space, rows, prefs.expandedFolders) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val long = awaitLongPressOrCancellation(down.id) ?: return@awaitEachGesture
+            val target = gestures.hit(origin() + long.position) ?: return@awaitEachGesture
+            if (target is HeldEssential) return@awaitEachGesture
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            val menu = when (target) {
+                is HeldTab -> tabMenu(vm, target.tab, space.uuid, context)
+                is HeldFolder -> listOf(
+                    MenuAction("folder", if (target.folder.id in prefs.expandedFolders) "Collapse Folder" else "Expand Folder") {
+                        vm.settings.toggleFolder(target.folder.id)
+                    },
+                    MenuAction("edit", "Rename Folder") { onRenameFolder(target.folder) },
+                )
+                is HeldEssential -> emptyList()
+            }
+            gestures.begin(target, menu, origin() + long.position)
+            var edit: LocalEdit.MoveItem? = null
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                change.consume()
+                val point = origin() + change.position
+                if (gestures.move(point, slop)) haptics.performHapticFeedback(MenuHoverTick)
+                if (gestures.dragging) {
+                    val own = Rect(origin(), listState.layoutInfo.viewportSize.let { androidx.compose.ui.geometry.Size(it.width.toFloat(), it.height.toFloat()) })
+                    val edge = 48.dp.toPx()
+                    if (point.y < own.top + edge && point.y > own.top) listState.dispatchRawDelta(-14f)
+                    if (point.y > own.bottom - edge && point.y < own.bottom) listState.dispatchRawDelta(14f)
+                    val inside = gestures.listRect.contains(point) || gestures.temporaryRect.contains(point)
+                    if (inside && !gestures.overEssentials) {
+                        val (next, index) = dropTarget(space, rows, gestures, target, point.y)
+                        edit = next
+                        val height = gestures.rowRects[target.key]?.takeIf { rows.any { it.key == target.key } }?.height ?: target.bounds.height
+                        gestures.gap = DropGap(target.key, rows.indexOfFirst { it.key == target.key }, index, height)
+                    } else {
+                        edit = null
+                        gestures.gap = null
+                    }
+                }
+                if (!change.pressed) break
+            }
+            val toEssentials = gestures.dragging && gestures.overEssentials
+            if (edit == null || toEssentials) gestures.gap = null
+            val chosen = gestures.release()
+            when {
+                chosen != null -> chosen()
+                toEssentials && target is HeldTab -> vm.addEssential(target.tab)
+                edit != null -> vm.move(edit!!)
+            }
+        }
     }
 }
 
