@@ -279,7 +279,10 @@ private fun AddressBar(
                 }
                 LaunchedEffect(searching) {
                     field = if (searching) TextFieldValue("") else TextFieldValue(vm.url, TextRange(0, vm.url.length))
-                    if (!vm.launcherFromBack) focus.requestFocus()
+                }
+                // The keyboard waits until the welcome screen is gone.
+                LaunchedEffect(searching, vm.showWelcome) {
+                    if (!vm.launcherFromBack && !vm.showWelcome) focus.requestFocus()
                 }
                 BasicTextField(
                     value = field,

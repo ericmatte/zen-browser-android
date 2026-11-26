@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity(), ActivityBridge {
                 val haptics = LocalHapticFeedback.current
                 CompositionLocalProvider(LocalHapticFeedback provides if (prefs.haptics) haptics else NoHaptics) {
                     BrowserScreen(vm, dark)
+                    // Sign-in runs in the browser screen's sheet; the welcome screen steps aside meanwhile.
+                    if (vm.showWelcome && vm.loginSession == null) WelcomeScreen(vm, dark)
                 }
             }
         }

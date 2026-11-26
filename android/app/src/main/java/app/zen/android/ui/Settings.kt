@@ -276,27 +276,11 @@ private fun settingsPanel(): Color = if (MaterialTheme.colorScheme.background.is
  */
 @Composable
 private fun DefaultBrowserRow() {
-    val context = LocalContext.current
-    val roles = remember { context.getSystemService(RoleManager::class.java) }
-    var isDefault by remember { mutableStateOf(roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true) }
-    var askedAt by remember { mutableStateOf(0L) }
-    val request = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        isDefault = roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true
-        if (!isDefault && System.currentTimeMillis() - askedAt < 400) {
-            context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-        }
-    }
-    if (isDefault) {
+    val browser = rememberDefaultBrowser()
+    if (browser.isDefault) {
         SettingRow("Default browser", "Zen opens the links you tap in other apps")
     } else {
-        ActionRow("Set Zen as default browser") {
-            askedAt = System.currentTimeMillis()
-            if (roles != null && roles.isRoleAvailable(RoleManager.ROLE_BROWSER)) {
-                request.launch(roles.createRequestRoleIntent(RoleManager.ROLE_BROWSER))
-            } else {
-                context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
-            }
-        }
+        ActionRow("Set Zen as default browser", onClick = browser::ask)
     }
 }
 

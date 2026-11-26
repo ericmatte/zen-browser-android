@@ -68,6 +68,14 @@ The app reuses desktop code or ports it closely:
   leaves it.
 - "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
   claims the page's address.
+- First launch: a welcome screen to sign in, make Zen the default browser and
+  set up Obtainium; each step is optional and stays in Settings.
+- Ads blocked by uBlock Origin, installed from addons.mozilla.org and kept up
+  to date (Settings → Privacy → Block ads turns it off).
+- Downloads: saved from Gecko's own response (signed-in and blob: files
+  work) to the Downloads folder. The library's Downloads section (also in the
+  ⋯ menu) shows progress; tap to open, hold to share, copy the link, remove
+  or delete.
 - Pages laid out for the phone's width never scroll sideways onto nothing.
 - Tabs come back where they were left: each tab's history and scroll position
   are saved on the phone (never for private tabs), so a tab reloaded after

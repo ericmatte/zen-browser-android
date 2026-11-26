@@ -134,6 +134,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var accountEmail by mutableStateOf(settings.string("accountEmail"))
         private set
     var showLibrary by mutableStateOf(false)
+    var showWelcome by mutableStateOf(settings.string("welcomed") == null)
+        private set
+
+    fun finishWelcome() {
+        showWelcome = false
+        settings.putString("welcomed", "1")
+    }
     var libraryTab by mutableStateOf(LibraryTab.HISTORY)
     val status: StateFlow<SyncStatus> = repository.status
     val lastSync = repository.lastSync
