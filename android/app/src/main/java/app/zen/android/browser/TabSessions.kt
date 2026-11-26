@@ -12,6 +12,8 @@ import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.MediaSession
+import org.mozilla.geckoview.PanZoomController
+import org.mozilla.geckoview.ScreenLength
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
 import org.mozilla.geckoview.WebResponse
@@ -83,7 +85,9 @@ object Gecko {
      */
     private fun writeConfig(context: Context): java.io.File =
         java.io.File(context.filesDir, "geckoview-config.yaml").apply {
-            writeText("prefs:\n  full-screen-api.allow-trusted-requests-only: false\n")
+            // Session state (history, scroll) is collected every few seconds rather than Gecko's 15 s, so
+            // a tab Android reclaims in the background comes back close to where it was left.
+            writeText("prefs:\n  full-screen-api.allow-trusted-requests-only: false\n  browser.sessionstore.interval: 3000\n  browser.sessionstore.platform_collection: true\n")
         }
 
     private fun installHelpers(runtime: GeckoRuntime) {
@@ -155,14 +159,27 @@ class TabSessions(
     private val prompts: GeckoSession.PromptDelegate? = null,
     private val permissions: GeckoSession.PermissionDelegate? = null,
     private val maxLive: Int = 4,
+    /** Tabs whose state is kept on disk; throwaway tabs (scratch, sign-in, glance) start fresh every time. */
+    private val keepsState: (String) -> Boolean = { true },
 ) {
+    private val snapshots = mutableMapOf<String, TabSnapshot>()
+    private val latestScroll = mutableMapOf<String, Int>()
+    private val scrollFlushes = mutableSetOf<String>()
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private val pendingScroll = mutableMapOf<String, Int>()
+    private val states = TabStateStore(java.io.File(context.filesDir, "tabstate"), java.util.concurrent.Executors.newSingleThreadExecutor())
+
     private val live = LinkedHashMap<String, GeckoSession>(16, 0.75f, true)
     private val desktopMode = mutableSetOf<String>()
 
     fun obtain(tabId: String, url: String): GeckoSession {
         live[tabId]?.let { return it }
         val session = create(tabId)
-        session.loadUri(url.ifBlank { "about:blank" })
+        val snapshot = if (keepsState(tabId)) TabSnapshot.decode(states.load(tabId)) else null
+        val saved = snapshot?.gecko?.let { GeckoSession.SessionState.fromString(it) }
+        if (saved != null) session.restoreState(saved) else session.loadUri(url.ifBlank { "about:blank" })
+        if (saved != null && snapshot.scrollY > 0) pendingScroll[tabId] = snapshot.scrollY
+        snapshot?.let { snapshots[tabId] = it }
         live[tabId] = session
         trim(keep = tabId)
         return session
@@ -175,8 +192,17 @@ class TabSessions(
         live.remove(tabId)?.close()
     }
 
-    fun closeAll(where: (String) -> Boolean) {
-        live.keys.filter(where).forEach { close(it) }
+    /** Closes the tab for good: unlike an eviction from memory, its saved state goes too. */
+    fun discard(tabId: String) {
+        close(tabId)
+        snapshots.remove(tabId)
+        pendingScroll.remove(tabId)
+        latestScroll.remove(tabId)
+        states.delete(tabId)
+    }
+
+    fun discardAll(where: (String) -> Boolean) {
+        live.keys.filter(where).forEach { discard(it) }
     }
 
     fun setActive(tabId: String) {
@@ -192,6 +218,27 @@ class TabSessions(
         session.settings.userAgentMode = if (desktop) GeckoSessionSettings.USER_AGENT_MODE_DESKTOP else GeckoSessionSettings.USER_AGENT_MODE_MOBILE
         session.settings.viewportMode = if (desktop) GeckoSessionSettings.VIEWPORT_MODE_DESKTOP else GeckoSessionSettings.VIEWPORT_MODE_MOBILE
         session.reload()
+    }
+
+    /** The page's scroll offset, in CSS pixels. */
+    private fun onPageScrolled(tabId: String, scrollY: Int) {
+        events.onScroll(tabId, scrollY)
+        // Saved once the page has been still for a moment, not on every report.
+        latestScroll[tabId] = scrollY
+        if (tabId !in scrollFlushes) {
+            scrollFlushes += tabId
+            main.postDelayed({
+                scrollFlushes -= tabId
+                latestScroll[tabId]?.let { y -> remember(tabId) { it.copy(scrollY = y) } }
+            }, 800)
+        }
+    }
+
+    private fun remember(tabId: String, change: (TabSnapshot) -> TabSnapshot) {
+        if (!keepsState(tabId)) return
+        val next = change(snapshots[tabId] ?: TabSnapshot(null, 0))
+        snapshots[tabId] = next
+        states.save(tabId, next.encode())
     }
 
     private fun trim(keep: String) {
@@ -280,9 +327,18 @@ class TabSessions(
         session.progressDelegate = object : GeckoSession.ProgressDelegate {
             override fun onProgressChange(session: GeckoSession, progress: Int) = events.onProgress(tabId, progress)
             override fun onPageStart(session: GeckoSession, url: String) = events.onPageStart(tabId)
-            override fun onPageStop(session: GeckoSession, success: Boolean) = events.onPageLoaded(tabId)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                pendingScroll.remove(tabId)?.let { y ->
+                    session.panZoomController.scrollTo(ScreenLength.zero(), ScreenLength.fromPixels(y.toDouble()), PanZoomController.SCROLL_BEHAVIOR_AUTO)
+                }
+                events.onPageLoaded(tabId)
+            }
             override fun onSecurityChange(session: GeckoSession, info: GeckoSession.ProgressDelegate.SecurityInformation) =
                 events.onSecurity(tabId, info.isSecure)
+
+            override fun onSessionStateChange(session: GeckoSession, sessionState: GeckoSession.SessionState) {
+                remember(tabId) { it.copy(gecko = sessionState.toString()) }
+            }
         }
         session.mediaSessionDelegate = object : MediaSession.Delegate {
             override fun onPlay(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, true)
@@ -291,13 +347,16 @@ class TabSessions(
             override fun onDeactivated(session: GeckoSession, mediaSession: MediaSession) = events.onMediaPlaying(tabId, false)
         }
         session.scrollDelegate = object : GeckoSession.ScrollDelegate {
-            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) = events.onScroll(tabId, scrollY)
+            override fun onScrollChanged(session: GeckoSession, scrollX: Int, scrollY: Int) = onPageScrolled(tabId, scrollY)
         }
         // Only the helper's content script can send these: pages have no access to native messaging.
         Gecko.withHelpers { extension ->
             session.webExtensionController.setMessageDelegate(extension, object : WebExtension.MessageDelegate {
                 override fun onMessage(nativeApp: String, message: Any, sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                    if ((message as? org.json.JSONObject)?.optString("type") == "videoRotated") events.onVideoRotated(tabId)
+                    val json = message as? org.json.JSONObject
+                    when (json?.optString("type")) {
+                        "videoRotated" -> events.onVideoRotated(tabId)
+                    }
                     return GeckoResult.fromValue(true)
                 }
             }, HELPERS_APP)

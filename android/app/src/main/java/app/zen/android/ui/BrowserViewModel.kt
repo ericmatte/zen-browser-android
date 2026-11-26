@@ -106,7 +106,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private val visits = History(File(app.filesDir, "history.json"))
     private var saveVisits: Job? = null
     private val auth = FxaAuth()
-    private val sessions = TabSessions(app, this, requests, requests)
+    private val sessions = TabSessions(app, this, requests, requests, keepsState = { id ->
+        !isPrivateTab(id) && id != SCRATCH_TAB && id != LOGIN_TAB && !id.endsWith(GLANCE_TAB)
+    })
 
     private val localTabs = MutableStateFlow(LocalTabs.decode(settings.string("localTabs")))
 
@@ -583,7 +585,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private fun forget(tabId: String) {
         loadingTabs -= tabId
         playingTabs -= tabId
-        sessions.close(tabId)
+        sessions.discard(tabId)
         urls.remove(tabId)
         titles.remove(tabId)
         backHistory.remove(tabId)
@@ -846,7 +848,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         accountEmail = null
         settings.putString("accountEmail", null)
         activeSpace = null
-        sessions.closeAll { !isPrivateTab(it) }
+        sessions.discardAll { !isPrivateTab(it) }
         selectTab(SCRATCH_TAB, home)
     }
 

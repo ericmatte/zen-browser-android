@@ -69,6 +69,10 @@ The app reuses desktop code or ports it closely:
 - "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
   claims the page's address.
 - Pages laid out for the phone's width never scroll sideways onto nothing.
+- Tabs come back where they were left: each tab's history and scroll position
+  are saved on the phone (never for private tabs), so a tab reloaded after
+  being dropped from memory, or after Android stopped the app, returns to the
+  same spot with its back button intact.
 - Updates: new versions are GitHub releases tagged `android-vX.Y.Z`. Settings →
   Updates adds Zen to [Obtainium](https://github.com/ImranR98/Obtainium) (or
   copies the repository URL for it). The app also asks GitHub twice a day and
