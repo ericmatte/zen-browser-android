@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.combine
 import app.zen.android.sync.LocalTabs
 import app.zen.android.browser.Release
 import app.zen.android.browser.Updates
+import app.zen.android.browser.SuggestionSwap
 import android.app.Application
 import android.content.Context
 import android.net.Uri
@@ -806,9 +807,16 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             .map { Suggestion.OpenTab(it) }
         val openUrls = openTabs.map { it.tab.url }.toSet()
         val visited = if (privateMode || !prefs.historyInSuggestions) emptyList() else visits.search(query, 4).filter { it.url !in openUrls }.map { Suggestion.Visited(it) }
-        suggestions = DismissedSuggestions.without(openTabs + visited, dismissed) { it.dismissKey }
-        if (!prefs.searchSuggestions || (privateMode && !prefs.suggestionsInPrivate)) return
+        val local = DismissedSuggestions.without(openTabs + visited, dismissed) { it.dismissKey }
+        val remoteOn = prefs.searchSuggestions && !(privateMode && !prefs.suggestionsInPrivate)
+        suggestions = SuggestionSwap.whileWaiting(suggestions, local, remoteOn)
+        if (!remoteOn) return
         suggestJob = viewModelScope.launch {
+            // A slow or offline engine must not leave the previous query's list up for long.
+            val fallback = launch {
+                delay(SuggestionSwap.REMOTE_PATIENCE_MILLIS)
+                suggestions = local
+            }
             delay(120)
             val remote = withContext(Dispatchers.IO) {
                 runCatching {
@@ -822,6 +830,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                     }
                 }.getOrDefault(emptyList())
             }
+            fallback.cancel()
             suggestions = DismissedSuggestions.without(openTabs + visited + remote.map { Suggestion.Search(it) }, dismissed) { it.dismissKey }
         }
     }
