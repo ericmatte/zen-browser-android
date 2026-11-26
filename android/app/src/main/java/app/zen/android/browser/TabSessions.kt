@@ -16,6 +16,7 @@ import org.mozilla.geckoview.PanZoomController
 import org.mozilla.geckoview.ScreenLength
 import org.mozilla.geckoview.StorageController
 import org.mozilla.geckoview.WebExtension
+import org.mozilla.geckoview.WebExtensionController
 import org.mozilla.geckoview.WebResponse
 
 const val PRIVATE_PREFIX = "private:"
@@ -65,7 +66,66 @@ object Gecko {
         ).also {
             runtime = it
             installHelpers(it)
+            it.webExtensionController.promptDelegate = AdBlockerPrompts
+            // Add-ons run in their own process, which GeckoView only starts once the app allows it (as Fenix does).
+            it.webExtensionController.enableExtensionProcessSpawning()
         }
+    }
+
+    /**
+     * uBlock Origin comes from addons.mozilla.org rather than the APK: it stays
+     * Mozilla-signed and GeckoView keeps it updated. Only the switch in
+     * Settings decides whether it runs.
+     */
+    const val UBLOCK_ID = "uBlock0@raymondhill.net"
+    private const val UBLOCK_XPI = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
+    private var adBlocking: Boolean? = null
+    private var adBlockerChecked = false
+
+    private fun setAdBlocking(runtime: GeckoRuntime, on: Boolean) {
+        if (adBlocking == on) return
+        adBlocking = on
+        val controller = runtime.webExtensionController
+        controller.list().accept({ list ->
+            val ext = list?.firstOrNull { it.id == UBLOCK_ID }
+            when {
+                ext == null && on -> controller.install(UBLOCK_XPI).accept(
+                    { installed -> installed?.let { controller.setAllowedInPrivateBrowsing(it, true) } },
+                    { error ->
+                        android.util.Log.w("Zen", "uBlock Origin install failed", error)
+                        adBlocking = null
+                        null
+                    },
+                )
+                ext == null -> Unit
+                on && !ext.metaData.enabled -> controller.enable(ext, WebExtensionController.EnableSource.APP)
+                !on && ext.metaData.enabled -> controller.disable(ext, WebExtensionController.EnableSource.APP)
+            }
+            if (ext != null && on && !adBlockerChecked) {
+                adBlockerChecked = true
+                controller.update(ext)
+            }
+        }, { null })
+    }
+
+    /** Installs and updates the app asks for itself are granted; nothing else installs silently. */
+    private object AdBlockerPrompts : WebExtensionController.PromptDelegate {
+        override fun onInstallPromptRequest(
+            extension: WebExtension,
+            permissions: Array<String>,
+            origins: Array<String>,
+            dataCollectionPermissions: Array<String>,
+        ): GeckoResult<WebExtension.PermissionPromptResponse> {
+            val ours = extension.id == UBLOCK_ID
+            return GeckoResult.fromValue(WebExtension.PermissionPromptResponse(ours, ours, false))
+        }
+
+        override fun onUpdatePrompt(
+            extension: WebExtension,
+            newPermissions: Array<String>,
+            newOrigins: Array<String>,
+            newDataCollectionPermissions: Array<String>,
+        ): GeckoResult<AllowOrDeny> = GeckoResult.fromValue(if (extension.id == UBLOCK_ID) AllowOrDeny.ALLOW else AllowOrDeny.DENY)
     }
 
     private var helpers: WebExtension? = null
@@ -107,6 +167,7 @@ object Gecko {
     /** Applies the privacy and display settings that desktop exposes in about:preferences. */
     fun apply(context: Context, prefs: app.zen.android.ui.Preferences) {
         val r = runtime(context)
+        setAdBlocking(r, prefs.adBlocking)
         val strict = prefs.tracking == app.zen.android.ui.TrackingProtection.STRICT
         r.settings.contentBlocking.apply {
             setEnhancedTrackingProtectionLevel(if (strict) ContentBlocking.EtpLevel.STRICT else ContentBlocking.EtpLevel.DEFAULT)

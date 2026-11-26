@@ -164,6 +164,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
 
                 Section("Privacy and Security") {
                     ChoiceRow("Enhanced Tracking Protection", prefs.tracking.detail, TrackingProtection.entries, prefs.tracking, { it.label }) { v -> set { it.copy(tracking = v) } }
+                    SwitchRow("Block ads", "uBlock Origin, downloaded from Mozilla's add-on site and kept up to date", prefs.adBlocking) { v -> set { it.copy(adBlocking = v) } }
                     SwitchRow("Tell websites not to sell or share my data", "Global Privacy Control", prefs.globalPrivacyControl) { v -> set { it.copy(globalPrivacyControl = v) } }
                     SwitchRow("Remove tracking parameters from links", null, prefs.stripTrackingParams) { v -> set { it.copy(stripTrackingParams = v) } }
                     ChoiceRow("HTTPS-Only Mode", null, HttpsOnly.entries, prefs.httpsOnly, { it.label }) { v -> set { it.copy(httpsOnly = v) } }

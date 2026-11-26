@@ -51,6 +51,7 @@ data class Preferences(
     val forceZoom: Boolean = false,
     val tracking: TrackingProtection = TrackingProtection.STANDARD,
     val globalPrivacyControl: Boolean = false,
+    val adBlocking: Boolean = true,
     val httpsOnly: HttpsOnly = HttpsOnly.PRIVATE,
     val dns: DnsOverHttps = DnsOverHttps.OFF,
     val stripTrackingParams: Boolean = true,
@@ -125,6 +126,7 @@ class AppSettings(context: Context) {
         putBoolean("forceZoom", p.forceZoom)
         putString("tracking", p.tracking.name)
         putBoolean("globalPrivacyControl", p.globalPrivacyControl)
+        putBoolean("adBlocking", p.adBlocking)
         putString("httpsOnly", p.httpsOnly.name)
         putString("dns", p.dns.name)
         putBoolean("stripTrackingParams", p.stripTrackingParams)
@@ -158,6 +160,7 @@ class AppSettings(context: Context) {
             forceZoom = prefs.getBoolean("forceZoom", d.forceZoom),
             tracking = enumOr(prefs.getString("tracking", null), d.tracking),
             globalPrivacyControl = prefs.getBoolean("globalPrivacyControl", d.globalPrivacyControl),
+            adBlocking = prefs.getBoolean("adBlocking", d.adBlocking),
             httpsOnly = enumOr(prefs.getString("httpsOnly", null), d.httpsOnly),
             dns = enumOr(prefs.getString("dns", null), d.dns),
             stripTrackingParams = prefs.getBoolean("stripTrackingParams", d.stripTrackingParams),
