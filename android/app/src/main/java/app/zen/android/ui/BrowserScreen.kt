@@ -310,7 +310,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     } else {
                         SpacesSidebar(
                             vm = vm,
-                            state = spaces,
+                            spaces = spaces,
                             status = status,
                             prefs = prefs,
                             essentials = essentials,

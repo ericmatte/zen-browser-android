@@ -1,5 +1,12 @@
 package app.zen.android.ui
 
+import app.zen.android.sync.SidebarItem
+import app.zen.android.sync.FolderItem
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.combine
+import app.zen.android.sync.LocalTabs
 import app.zen.android.browser.Release
 import app.zen.android.browser.Updates
 import android.app.Application
@@ -101,7 +108,20 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private val auth = FxaAuth()
     private val sessions = TabSessions(app, this, requests, requests)
 
-    val spaces: StateFlow<SpacesState> = repository.view
+    private val localTabs = MutableStateFlow(LocalTabs.decode(settings.string("localTabs")))
+
+    /** Synced spaces with the phone's own temporary tabs under each one (see LocalTabs). */
+    val spaces: StateFlow<List<Space>> = combine(repository.view, localTabs) { state, local -> LocalTabs.merge(state.spaces(), local) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private fun allSpaces(): List<Space> = LocalTabs.merge(repository.view.value.spaces(), localTabs.value)
+
+    private fun isLocalTab(id: String) = localTabs.value.any { it.id == id }
+
+    private fun setLocalTabs(list: List<TabItem>) {
+        localTabs.value = list
+        settings.putString("localTabs", LocalTabs.encode(list))
+    }
     val essentials: StateFlow<List<TabItem>> = settings.essentials
 
     var accountEmail by mutableStateOf(settings.string("accountEmail"))
@@ -193,6 +213,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         viewModelScope.launch { settings.state.collect { Gecko.apply(getApplication(), it) } }
         viewModelScope.launch {
             repository.load()
+            migrateTemporaryTabs()
             refreshEmail()
             activeSpace = repository.view.value.spaces().firstOrNull()?.uuid
             ready = true
@@ -211,12 +232,20 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    /** Closes unpinned tabs the phone opened once they sit unseen longer than the chosen delay. */
+    /** Closes the phone's temporary tabs once they sit unseen longer than the chosen delay. */
     private fun cleanUpIdleTabs() {
         val hours = settings.state.value.tabCleanup.hours ?: return
-        val unpinned = repository.view.value.spaces().flatMap { it.regularTabs }.map { it.id }
-        val expired = app.zen.android.browser.TabCleanupRule.expired(unpinned, openedHere, lastSeen, activeTab, System.currentTimeMillis(), hours * 3_600_000)
+        val ids = localTabs.value.map { it.id }
+        val expired = app.zen.android.browser.TabCleanupRule.expired(ids, ids.toSet(), lastSeen, activeTab, System.currentTimeMillis(), hours * 3_600_000)
         closeTabs(expired)
+    }
+
+    /** Once: temporary tabs earlier versions synced stay on desktop, and the phone keeps its own copies. */
+    private fun migrateTemporaryTabs() {
+        if (settings.string("localTabsMigrated") != null) return
+        val copies = LocalTabs.migrate(repository.view.value.spaces(), openedHere, SpacesState::newTabId)
+        setLocalTabs(localTabs.value + copies)
+        settings.putString("localTabsMigrated", "1")
     }
 
     private fun refreshEmail() {
@@ -229,10 +258,6 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    private fun rememberOpenedHere(id: String) {
-        openedHere += id
-        settings.putString("openedHere", openedHere.joinToString(","))
-    }
 
     fun startSyncLoop() {
         if (syncLoop?.isActive == true) return
@@ -285,7 +310,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    fun space(uuid: String?): Space? = repository.view.value.spaces().firstOrNull { it.uuid == uuid }
+    fun space(uuid: String?): Space? = allSpaces().firstOrNull { it.uuid == uuid }
 
     fun isDesktopMode() = sessions.isDesktopMode(activeTab)
 
@@ -311,7 +336,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         endFind()
         if (!isPrivateTab(tabId)) {
             lastNormalTab = TabItem(tabId, url, titles[tabId] ?: url, false)
-            repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tabId } }?.let { activeSpace = it.uuid }
+            // Temporary tabs show in every space, so only a synced tab says which space it belongs to.
+            if (!isLocalTab(tabId)) repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tabId } }?.let { activeSpace = it.uuid }
         }
         requestCapture()
     }
@@ -336,7 +362,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     private fun knownTab(id: String): TabItem? =
-        privateTabs.firstOrNull { it.id == id } ?: repository.view.value.tab(id)
+        privateTabs.firstOrNull { it.id == id } ?: localTabs.value.firstOrNull { it.id == id } ?: repository.view.value.tab(id)
 
     /** Most recently used tabs of the current mode, newest first, for the long-press switcher. */
     fun recentTabs(limit: Int = 6): List<TabItem> = recentIds
@@ -504,14 +530,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             return
         }
         val id = SpacesState.newTabId()
-        rememberOpenedHere(id)
-        // Shown at once: waiting for the stored edit left a moment with no page, and the home search's
-        // fallback would load the space's first tab in its place.
+        setLocalTabs(localTabs.value + TabItem(id, target, UrlInput.display(target), pinned = false))
         selectTab(id, target)
-        viewModelScope.launch {
-            repository.edit(LocalEdit.OpenTab(id, space, target, UrlInput.display(target)))
-            repository.sync()
-        }
     }
 
     fun newPrivateTab(target: String = home) {
@@ -555,8 +575,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun closeTab(tabId: String) = closeTabs(listOf(tabId))
 
-    fun clearRegularTabs(spaceUuid: String) {
-        space(spaceUuid)?.regularTabs?.map { it.id }?.let(::closeTabs)
+    /** Temporary tabs are one list shared by every space, so clearing from any space clears them all. */
+    fun clearRegularTabs() {
+        closeTabs(localTabs.value.map { it.id })
     }
 
     private fun forget(tabId: String) {
@@ -579,7 +600,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                 privateTabs.lastOrNull()?.let(::selectTab) ?: togglePrivateMode()
             }
         }
-        val synced = ids.filter { !isLocalOnly(it) }
+        val local = ids.filter(::isLocalTab).toSet()
+        if (local.isNotEmpty()) setLocalTabs(localTabs.value.filter { it.id !in local })
+        val synced = ids.filter { !isLocalOnly(it) && it !in local }
         viewModelScope.launch {
             synced.forEach { repository.edit(LocalEdit.CloseTab(it)) }
             if (activeTab in ids && !isPrivateTab(activeTab)) {
@@ -591,7 +614,44 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    fun move(edit: LocalEdit.MoveItem) = edit(edit)
+    /** Routes a drag: phone tabs reorder locally, crossing the separator pins (syncs) or unpins (un-syncs) a tab. */
+    fun move(edit: LocalEdit.MoveItem) {
+        // The server decides: a tab it holds as pinned is synced, whatever the phone's list still remembers.
+        val synced = repository.view.value.tab(edit.itemId)?.takeIf { it.pinned }
+        val local = if (synced == null) localTabs.value.firstOrNull { it.id == edit.itemId } else null
+        when {
+            local != null && edit.pinned == true -> pinIntoSpace(local, edit)
+            local != null -> setLocalTabs(LocalTabs.insert(localTabs.value, local, edit.beforeId))
+            synced != null && edit.pinned == false -> unpinToPhone(synced, edit.beforeId)
+            else -> edit(edit)
+        }
+    }
+
+    private fun pinIntoSpace(tab: TabItem, move: LocalEdit.MoveItem) {
+        val space = spaceHolding(move.parentId) ?: activeSpace ?: return
+        val live = TabItem(tab.id, urls[tab.id] ?: tab.url, titles[tab.id] ?: tab.title, pinned = false)
+        setLocalTabs(localTabs.value.filter { it.id != tab.id })
+        viewModelScope.launch {
+            repository.edit(LocalEdit.OpenTab(live.id, space, live.url, live.title))
+            repository.edit(move.copy(pinned = true))
+            repository.sync()
+        }
+    }
+
+    private fun unpinToPhone(tab: TabItem, beforeId: String?) {
+        val live = TabItem(tab.id, urls[tab.id] ?: tab.url, titles[tab.id] ?: tab.title, pinned = false)
+        viewModelScope.launch {
+            repository.edit(LocalEdit.CloseTab(tab.id))
+            setLocalTabs(LocalTabs.insert(localTabs.value, live, beforeId))
+            repository.sync()
+        }
+    }
+
+    /** The synced space that is [id] or holds the folder [id]. */
+    private fun spaceHolding(id: String): String? {
+        fun holds(items: List<SidebarItem>): Boolean = items.any { it.id == id || (it is FolderItem && holds(it.items)) }
+        return repository.view.value.spaces().firstOrNull { it.uuid == id || holds(it.items) }?.uuid
+    }
 
     private fun edit(edit: LocalEdit) = viewModelScope.launch {
         repository.edit(edit)
@@ -602,11 +662,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     fun renameFolder(folderId: String, name: String) = edit(LocalEdit.RenameFolder(folderId, name))
 
-    /** Pinned tabs go last in the pinned section; unpinned ones go first among the temporary tabs, like desktop. */
-    fun setPinned(tab: TabItem, pinned: Boolean) {
-        val space = repository.view.value.spaces().firstOrNull { sp -> sp.tabs.any { it.id == tab.id } } ?: return
-        val firstRegular = space.regularTabs.firstOrNull { it.id != tab.id }?.id
-        edit(LocalEdit.MoveItem(tab.id, space.uuid, firstRegular, pinned))
+    /** Pinned tabs go last in the current space's pinned section; unpinned ones go first among the temporary tabs, like desktop. */
+    fun setPinned(tab: TabItem, pinned: Boolean, spaceUuid: String) {
+        val synced = repository.view.value.tab(tab.id)?.pinned == true
+        when {
+            pinned && !synced -> pinIntoSpace(tab, LocalEdit.MoveItem(tab.id, spaceUuid, null, true))
+            !pinned && synced -> unpinToPhone(tab, localTabs.value.firstOrNull { it.id != tab.id }?.id)
+        }
     }
 
     fun essentialsFull() = essentials.value.size >= MAX_ESSENTIALS
@@ -636,12 +698,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         val title = titles[essential.id] ?: essential.title
         removeEssential(essential.id)
         val id = SpacesState.newTabId()
-        rememberOpenedHere(id)
-        viewModelScope.launch {
-            repository.edit(LocalEdit.OpenTab(id, spaceUuid, url, title))
-            if (wasActive) selectTab(id, url)
-            repository.sync()
-        }
+        setLocalTabs(localTabs.value + TabItem(id, url, title, pinned = false))
+        if (wasActive) selectTab(id, url)
     }
 
     fun historyEntries(query: String, since: Long?, sort: app.zen.android.browser.HistorySort) = visits.browse(query, since, sort)
@@ -724,7 +782,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         val candidates = when {
             !prefs.openTabsInSuggestions -> emptyList()
             privateMode -> privateTabs.toList()
-            else -> repository.view.value.spaces().flatMap { it.tabs } + essentials.value
+            else -> allSpaces().flatMap { it.tabs } + essentials.value
         }
         val openTabs = candidates
             .filter { it.id != activeTab && (it.title.contains(query, true) || it.url.contains(query, true)) }
@@ -922,6 +980,11 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
         if (isLocalOnly(tabId)) return
         val u = urls[tabId]?.takeUnless(UrlInput::isPlaceholder) ?: return
+        localTabs.value.firstOrNull { it.id == tabId }?.let { tab ->
+            val title = titles[tabId] ?: tab.title
+            if (tab.url != u || tab.title != title) setLocalTabs(localTabs.value.map { if (it.id == tabId) it.copy(url = u, title = title) else it })
+            return
+        }
         val synced = repository.view.value.tab(tabId) ?: return
         val title = titles[tabId] ?: synced.title
         if (synced.url == u && synced.title == title) return

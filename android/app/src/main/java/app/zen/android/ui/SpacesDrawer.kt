@@ -138,7 +138,7 @@ fun toolbarElementBackground(): Color =
 @Composable
 fun SpacesSidebar(
     vm: BrowserViewModel,
-    state: SpacesState,
+    spaces: List<Space>,
     status: SyncStatus,
     prefs: Preferences,
     essentials: List<TabItem>,
@@ -147,7 +147,6 @@ fun SpacesSidebar(
     onPrivate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val spaces = state.spaces()
     val initial = spaces.indexOfFirst { it.uuid == vm.activeSpace }.coerceAtLeast(0)
     val pager = rememberPagerState(initialPage = initial) { spaces.size }
     val scope = rememberCoroutineScope()
@@ -244,7 +243,7 @@ fun SpacesSidebar(
                                 MenuAction("pin", if (space.uuid in prefs.collapsedSpaces) "Show Pinned Tabs" else "Hide Pinned Tabs") {
                                     vm.settings.toggleSpaceCollapsed(space.uuid)
                                 },
-                                MenuAction("trash", "Clear Temporary Tabs", destructive = true) { vm.clearRegularTabs(space.uuid) }
+                                MenuAction("trash", "Clear Temporary Tabs", destructive = true) { vm.clearRegularTabs() }
                                     .takeIf { space.regularTabs.isNotEmpty() },
                             )
                         },
@@ -383,8 +382,8 @@ class SidebarGestures {
     }
 }
 
-private fun tabMenu(vm: BrowserViewModel, tab: TabItem, context: android.content.Context): List<MenuAction> = listOfNotNull(
-    MenuAction(if (tab.pinned) "unpin" else "pin", if (tab.pinned) "Unpin Tab" else "Pin Tab") { vm.setPinned(tab, !tab.pinned) },
+private fun tabMenu(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, context: android.content.Context): List<MenuAction> = listOfNotNull(
+    MenuAction(if (tab.pinned) "unpin" else "pin", if (tab.pinned) "Unpin Tab" else "Pin Tab") { vm.setPinned(tab, !tab.pinned, spaceUuid) },
     MenuAction("essential-add", "Add to Essentials") { vm.addEssential(tab) }.takeUnless { vm.essentialsFull() },
     MenuAction("link", "Copy Link") {
         copyToClipboard(context, tab.url)
@@ -638,7 +637,7 @@ private fun SpacePage(
                 if (space.regularTabs.isNotEmpty()) {
                     val muted = MaterialTheme.colorScheme.onSurfaceVariant
                     Row(
-                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs(space.uuid) }
+                        Modifier.padding(start = 6.dp).clip(RoundedCornerShape(6.dp)).clickable { vm.clearRegularTabs() }
                             .padding(horizontal = 6.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -685,7 +684,7 @@ private fun SpacePage(
                     if (target is HeldEssential) return@awaitEachGesture
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     val menu = when (target) {
-                        is HeldTab -> tabMenu(vm, target.tab, context)
+                        is HeldTab -> tabMenu(vm, target.tab, space.uuid, context)
                         is HeldFolder -> listOf(
                             MenuAction("folder", if (target.folder.id in prefs.expandedFolders) "Collapse Folder" else "Expand Folder") {
                                 vm.settings.toggleFolder(target.folder.id)
@@ -877,8 +876,8 @@ private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, dept
         key = tab.id,
         group = gestures.reveal,
         reveal = if (tab.pinned) null else SwipeAction("archive", "Archive tab", DestructiveRed) { vm.closeTab(tab.id) },
-        commitStart = SwipeAction(if (tab.pinned) "unpin" else "pin", if (tab.pinned) "Unpin" else "Pin", accent) { vm.setPinned(tab, !tab.pinned) },
-        commitEnd = if (tab.pinned) SwipeAction("unpin", "Unpin", accent) { vm.setPinned(tab, false) } else null,
+        commitStart = SwipeAction(if (tab.pinned) "unpin" else "pin", if (tab.pinned) "Unpin" else "Pin", accent) { vm.setPinned(tab, !tab.pinned, spaceUuid) },
+        commitEnd = if (tab.pinned) SwipeAction("unpin", "Unpin", accent) { vm.setPinned(tab, false, spaceUuid) } else null,
         modifier = Modifier.onGloballyPositioned { gestures.hitRects[tab.id] = it.boundsInRoot() to HeldTab(tab, spaceUuid, it.boundsInRoot()) },
     ) {
         TabRow(tab, depth, tab.id == vm.activeTab) {
