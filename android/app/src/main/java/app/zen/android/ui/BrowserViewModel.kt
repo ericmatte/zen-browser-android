@@ -1,5 +1,12 @@
 package app.zen.android.ui
 
+import kotlinx.coroutines.flow.asStateFlow
+import android.os.Build
+import android.provider.MediaStore
+import android.content.ContentValues
+import app.zen.android.browser.DownloadStatus
+import app.zen.android.browser.DownloadItem
+import app.zen.android.browser.Downloads
 import app.zen.android.sync.SidebarItem
 import app.zen.android.sync.FolderItem
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -10,10 +17,8 @@ import app.zen.android.sync.LocalTabs
 import app.zen.android.browser.Release
 import app.zen.android.browser.Updates
 import android.app.Application
-import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
 import android.webkit.URLUtil
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -129,6 +134,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var accountEmail by mutableStateOf(settings.string("accountEmail"))
         private set
     var showLibrary by mutableStateOf(false)
+    var libraryTab by mutableStateOf(LibraryTab.HISTORY)
     val status: StateFlow<SyncStatus> = repository.status
     val lastSync = repository.lastSync
 
@@ -1067,20 +1073,84 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         if (tabId == activeTab) this.fullScreen = fullScreen
     }
 
+    private val _downloads = MutableStateFlow(Downloads.afterRestart(Downloads.decode(settings.string("downloads"))))
+    val downloads: StateFlow<List<DownloadItem>> = _downloads.asStateFlow()
+
+    private fun putDownload(item: DownloadItem) {
+        _downloads.value = Downloads.upsert(_downloads.value, item)
+        settings.putString("downloads", Downloads.encode(_downloads.value))
+    }
+
+    fun removeDownload(item: DownloadItem, deleteFile: Boolean) {
+        if (deleteFile) item.uri?.let { uri -> runCatching { getApplication<Application>().contentResolver.delete(Uri.parse(uri), null, null) } }
+        _downloads.value = _downloads.value.filter { it.id != item.id }
+        settings.putString("downloads", Downloads.encode(_downloads.value))
+    }
+
+    /**
+     * Saves the response Gecko already opened, rather than asking Android to
+     * fetch the address again: the page's cookies and session come along, so
+     * files behind a sign-in (and blob: or data: links) download too.
+     */
     override fun onDownload(tabId: String, response: WebResponse) {
-        runCatching { response.body?.close() }
         val app = getApplication<Application>()
-        val name = URLUtil.guessFileName(response.uri, response.headers["Content-Disposition"], response.headers["Content-Type"])
-        try {
-            val request = DownloadManager.Request(Uri.parse(response.uri))
-                .setTitle(name)
-                .setMimeType(response.headers["Content-Type"])
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
-            (app.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(request)
-            message = "Downloading $name"
-        } catch (e: Exception) {
-            message = "Download failed: ${e.message}"
+        val mime = response.headers["Content-Type"]?.substringBefore(';')?.trim()?.takeIf { it.isNotEmpty() }
+        val name = URLUtil.guessFileName(response.uri, response.headers["Content-Disposition"], mime)
+        val total = response.headers["Content-Length"]?.toLongOrNull() ?: 0L
+        val body = response.body
+        val start = DownloadItem(UUID.randomUUID().toString(), name, mime, null, total, 0, DownloadStatus.RUNNING, System.currentTimeMillis(), response.uri)
+        if (body == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            runCatching { body?.close() }
+            putDownload(start.copy(status = DownloadStatus.FAILED))
+            message = "Download failed"
+            return
+        }
+        putDownload(start)
+        message = "Downloading $name"
+        // A link that opens straight onto a file leaves an empty tab behind; desktop closes it, and so do we.
+        if (backHistory[tabId] != true && (urls[tabId] ?: "").let { it.isEmpty() || it == response.uri || UrlInput.isPlaceholder(it) }) closeTab(tabId)
+        viewModelScope.launch {
+            val resolver = app.contentResolver
+            val done = withContext(Dispatchers.IO) {
+                var uri: Uri? = null
+                try {
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, name)
+                        mime?.let { put(MediaStore.Downloads.MIME_TYPE, it) }
+                        put(MediaStore.Downloads.IS_PENDING, 1)
+                    }
+                    uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("no row")
+                    var received = 0L
+                    var reported = 0L
+                    body.use { input ->
+                        resolver.openOutputStream(uri)!!.use { output ->
+                            val buffer = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = input.read(buffer)
+                                if (n < 0) break
+                                output.write(buffer, 0, n)
+                                received += n
+                                if (received - reported > 256 * 1024) {
+                                    reported = received
+                                    val now = start.copy(uri = uri.toString(), received = received)
+                                    withContext(Dispatchers.Main) { putDownload(now) }
+                                }
+                            }
+                        }
+                    }
+                    resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
+                    // Android renames a file whose name is taken ("report (1).pdf"); show the name it really has.
+                    val saved = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    } ?: name
+                    start.copy(name = saved, uri = uri.toString(), received = received, total = maxOf(total, received), status = DownloadStatus.DONE)
+                } catch (e: Exception) {
+                    uri?.let { runCatching { resolver.delete(it, null, null) } }
+                    start.copy(status = DownloadStatus.FAILED)
+                }
+            }
+            putDownload(done)
+            message = if (done.status == DownloadStatus.DONE) "Downloaded ${done.name}" else "Download failed: ${done.name}"
         }
     }
 

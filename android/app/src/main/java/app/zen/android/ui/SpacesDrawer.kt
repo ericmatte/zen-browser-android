@@ -1,5 +1,6 @@
 package app.zen.android.ui
 
+import app.zen.android.browser.UrlInput
 import androidx.compose.ui.composed
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -965,7 +966,7 @@ private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, onClick: () -> U
     ) {
         Favicon(tab.url, tab.icon, SidebarIconSize)
         Text(
-            tab.title,
+            tab.title.ifBlank { UrlInput.display(tab.url) },
             Modifier.padding(start = SidebarIconGap),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

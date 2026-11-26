@@ -808,6 +808,10 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 }
                 Item("New private tab", "privateBrowsing") { vm.startPrivateBrowsing() }
                 Item("Find in page", "search-page") { vm.startFind() }
+                Item("Downloads", "downloads") {
+                    vm.libraryTab = LibraryTab.DOWNLOADS
+                    vm.showLibrary = true
+                }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
                 Item("Settings", "settings", badge = vm.update != null) { vm.showSettings = true }
             }

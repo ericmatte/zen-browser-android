@@ -48,6 +48,9 @@ import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 
+/** The library's sections, as on desktop: what you visited and what you saved. */
+enum class LibraryTab(val label: String) { HISTORY("History"), DOWNLOADS("Downloads") }
+
 /** library-filter-*: the "When was it visited?" group. */
 enum class HistoryWhen(val label: String, val days: Int?) { ANY("Any time", null), TODAY("Today", 0), WEEK("This Week", 7), MONTH("This Month", 30) }
 
@@ -97,8 +100,20 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
                 Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                     Row(Modifier.fillMaxWidth().height(52.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { vm.showLibrary = false }) { Icon(zenIcon("back"), "Back", Modifier.size(18.dp), tint = text) }
-                        Text("History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = text)
+                        LibraryTab.entries.forEach { tab ->
+                            val selected = vm.libraryTab == tab
+                            Text(
+                                tab.label,
+                                Modifier.clip(RoundedCornerShape(10.dp)).clickable { vm.libraryTab = tab }.padding(horizontal = 10.dp, vertical = 6.dp),
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (selected) text else text.copy(alpha = 0.45f),
+                            )
+                        }
                     }
+                    if (vm.libraryTab == LibraryTab.DOWNLOADS) {
+                        DownloadsSection(vm, visitMenu, Modifier.weight(1f))
+                    } else {
                     Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(
                             Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).background(toolbarElementBackground()).padding(horizontal = 14.dp),
@@ -176,6 +191,7 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
                                 )
                             }
                         }
+                    }
                     }
                 }
                 HoldMenuHost(visitMenu)
