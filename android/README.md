@@ -80,7 +80,8 @@ The app reuses desktop code or ports it closely:
   (Settings → Haptic feedback, on by default).
 - The sidebar opens from the bar's sidebar button; the screen edges keep
   Android's back gesture.
-- Private tabs: near-black, sidebar on the right, never synced, no history.
+- Private tabs: near-black, sidebar on the right (tabs at the bottom, like
+  spaces), never synced, no history.
   Google shows its own dark theme. Entering private mode with no tab opens the
   search (the Private label sits just above it); otherwise the private
   sidebar lets you pick. Launcher shortcut

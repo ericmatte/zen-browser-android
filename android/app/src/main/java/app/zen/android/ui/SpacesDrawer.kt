@@ -502,13 +502,13 @@ private data object DividerRow : Row {
 
 private const val FILLER_KEY = "__filler"
 
-private val SidebarRowHeight = 46.dp
-private val SidebarIconSize = 20.dp
+internal val SidebarRowHeight = 46.dp
+internal val SidebarIconSize = 20.dp
 private val SidebarFolderIconSize = 24.dp
-private val SidebarIconGap = 12.dp
+internal val SidebarIconGap = 12.dp
 
 @Composable
-private fun sidebarText() = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
+internal fun sidebarText() = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp)
 
 private data object NewTabRow : Row {
     override val key = "__newtab"

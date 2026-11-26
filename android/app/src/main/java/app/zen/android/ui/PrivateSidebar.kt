@@ -1,5 +1,7 @@
 package app.zen.android.ui
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -61,21 +63,26 @@ fun PrivateSidebar(vm: BrowserViewModel, onTab: (TabItem) -> Unit, onClose: () -
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
         )
-        Column(Modifier.weight(1f).padding(8.dp)) {
-            vm.privateTabs.forEach { tab ->
-                key(tab.id) {
-                    PrivateTabRow(tab, tab.id == vm.activeTab, onClick = { onTab(tab) }, onCloseTab = { vm.closeTab(tab.id) })
+        // Tabs gather at the bottom, within thumb reach, like the spaces sidebar.
+        Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.BottomCenter) {
+            Column(Modifier.verticalScroll(rememberScrollState(), reverseScrolling = true)) {
+                vm.privateTabs.forEach { tab ->
+                    key(tab.id) {
+                        PrivateTabRow(tab, tab.id == vm.activeTab, onClick = { onTab(tab) }, onCloseTab = { vm.closeTab(tab.id) })
+                    }
                 }
-            }
-            Row(
-                Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(10.dp)).clickable {
-                    onClose()
-                    vm.openLauncher()
-                }.padding(horizontal = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(zenIcon("plus"), null, Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.7f))
-                Text("New private tab", Modifier.padding(start = 12.dp), color = Color.White.copy(alpha = 0.7f))
+                Row(
+                    Modifier.fillMaxWidth().height(SidebarRowHeight).clip(RoundedCornerShape(10.dp)).clickable {
+                        onClose()
+                        vm.openLauncher()
+                    }.padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.size(SidebarIconSize), contentAlignment = Alignment.Center) {
+                        Icon(zenIcon("plus"), null, Modifier.size(SidebarIconSize - 2.dp), tint = Color.White.copy(alpha = 0.7f))
+                    }
+                    Text("New private tab", Modifier.padding(start = SidebarIconGap), style = sidebarText(), color = Color.White.copy(alpha = 0.7f))
+                }
             }
         }
         Row(Modifier.fillMaxWidth().padding(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -107,15 +114,15 @@ private fun PrivateTabRow(tab: TabItem, selected: Boolean, onClick: () -> Unit, 
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(40.dp)
+                .height(SidebarRowHeight)
                 .clip(RoundedCornerShape(10.dp))
                 .background(if (selected) Color.White.copy(alpha = 0.14f) else Color.Transparent)
                 .clickable(onClick = onClick)
                 .padding(horizontal = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Favicon(tab.url, null, 18.dp)
-            Text(tab.title, Modifier.padding(start = 12.dp), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Favicon(tab.url, null, SidebarIconSize)
+            Text(tab.title, Modifier.padding(start = SidebarIconGap), style = sidebarText(), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
