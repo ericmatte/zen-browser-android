@@ -1,5 +1,9 @@
 package app.zen.android.ui
 
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -267,16 +271,27 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { drawer.close() },
             )
             val onRight = drawer.side.value > 0.5f
+            val drawerShape = (22.dp * (1f - library)).let { r ->
+                if (onRight) RoundedCornerShape(topStart = r, bottomStart = r) else RoundedCornerShape(topEnd = r, bottomEnd = r)
+            }
+            val edgeColor = if (vm.privateMode || dark) Color.White.copy(alpha = 0.14f) else Color.Black.copy(alpha = 0.1f)
             Box(
                 Modifier
                     .width(drawerWidth)
                     .fillMaxHeight()
                     .offset { IntOffset(drawer.x().toInt(), 0) }
-                    .clip(
-                        (22.dp * (1f - library)).let { r ->
-                            if (onRight) RoundedCornerShape(topStart = r, bottomStart = r) else RoundedCornerShape(topEnd = r, bottomEnd = r)
-                        },
-                    )
+                    .clip(drawerShape)
+                    // A hairline along the edge facing the page; it fades out as the library takes the full width.
+                    .drawWithContent {
+                        drawContent()
+                        val edge = 1.5.dp.toPx()
+                        val corner = 22.dp.toPx()
+                        val outline = drawerShape.createOutline(size, layoutDirection, this)
+                        val left = if (onRight) 0f else size.width - corner - edge
+                        clipRect(left = left, right = left + corner + edge) {
+                            drawOutline(outline, edgeColor.copy(alpha = edgeColor.alpha * (1f - library)), style = Stroke(edge * 2))
+                        }
+                    }
                     .nestedScroll(drawer.nestedScroll)
                     .draggable(
                         orientation = Orientation.Horizontal,

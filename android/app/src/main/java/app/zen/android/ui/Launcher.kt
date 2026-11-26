@@ -1,5 +1,7 @@
 package app.zen.android.ui
 
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -47,10 +49,18 @@ fun BoxScope.LauncherBackdrop(vm: BrowserViewModel) {
                 .background(backdrop)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { vm.closeLauncher() },
         ) {
-            if (vm.privateMode) {
-                Row(Modifier.statusBarsPadding().padding(start = 20.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(zenIcon("privateBrowsing"), null, Modifier.size(16.dp), tint = Color.White.copy(alpha = 0.8f))
-                    Text("Private", Modifier.padding(start = 8.dp), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelLarge)
+            // Sits just above the docked search field, which rides on the keyboard; suggestions take its place.
+            if (vm.privateMode && vm.suggestions.isEmpty()) {
+                Row(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .imePadding()
+                        .navigationBarsPadding()
+                        .padding(bottom = EditBarHeight + 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(zenIcon("privateBrowsing"), null, Modifier.size(22.dp), tint = Color.White.copy(alpha = 0.85f))
+                    Text("Private", Modifier.padding(start = 10.dp), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.titleMedium)
                 }
             }
         }

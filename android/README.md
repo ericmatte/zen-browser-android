@@ -46,8 +46,12 @@ The app reuses desktop code or ports it closely:
   (reorder, pin, or drop into Essentials). While dragging, the rows open a
   gap where the item will land.
 - Essentials are local to the phone (never synced) and hold up to 12 tabs.
-- Unpinned tabs opened on the phone close after a chosen idle time. Tabs
-  opened on desktop are never closed from the phone.
+- Only pinned tabs, folders and spaces sync. Temporary (unpinned) tabs stay
+  where they were opened: desktop's never show on the phone, and the phone's
+  never reach desktop. The phone keeps one temporary list shared by every
+  space; "Clear" empties it and idle ones close after a chosen time. Pinning a
+  phone tab syncs it into the space shown; unpinning a synced tab takes it off
+  desktop and into the phone's list.
 - Sync runs on its own: at launch, on resume, when the sidebar opens, after
   each change and every 5 minutes. Pull the sidebar list down to sync now.
   Settings → Account shows when the last sync ran and how many records it
@@ -78,7 +82,8 @@ The app reuses desktop code or ports it closely:
   Android's back gesture.
 - Private tabs: near-black, sidebar on the right, never synced, no history.
   Google shows its own dark theme. Entering private mode with no tab opens the
-  search; otherwise the private sidebar lets you pick. Launcher shortcut
+  search (the Private label sits just above it); otherwise the private
+  sidebar lets you pick. Launcher shortcut
   "New private tab".
 - Pull a page down from its top to reload (only where Gecko allows overscroll,
   like Firefox for Android).
