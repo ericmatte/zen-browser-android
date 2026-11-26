@@ -1,5 +1,8 @@
 package app.zen.android.ui
 
+import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import app.zen.android.browser.PageSnapshot
 import kotlinx.coroutines.flow.asStateFlow
 import android.os.Build
 import android.provider.MediaStore
@@ -203,6 +206,28 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         private set
     private var suggestJob: Job? = null
 
+    private val snapshots = PageSnapshot(File(app.filesDir, "snapshot"))
+
+    /** The last session's picture of the page, shown until the restored page has loaded underneath it. */
+    var launchSnapshot by mutableStateOf<Pair<String, androidx.compose.ui.graphics.ImageBitmap>?>(null)
+        private set
+
+    fun saveSnapshot(bitmap: Bitmap) {
+        val tab = activeTab
+        if (!hasPage || isLocalOnly(tab) && !isLocalTab(tab)) return
+        viewModelScope.launch(Dispatchers.IO) { snapshots.save(tab, bitmap) }
+    }
+
+    fun dropSnapshot() {
+        launchSnapshot = null
+    }
+
+    /** The tabs after the one shown come back too, quietly, so switching to them is instant. */
+    private fun prewarmRecentTabs() {
+        recentTabs(2).forEach { sessions.obtain(it.id, urls[it.id] ?: it.url) }
+        sessions.setActive(activeTab)
+    }
+
     /** Bumped whenever the visible page may have changed colour, so the UI re-samples it. */
     var captureRequest by mutableIntStateOf(0)
         private set
@@ -238,7 +263,17 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             when {
                 privateRequested -> startPrivateBrowsing()
                 link != null -> openIncoming(link)
-                else -> openLauncher()
+                else -> {
+                    val last = EmptySelection.atLaunch(recentIds.toList(), localTabs.value.map { it.id })
+                    val tab = last?.let { id -> localTabs.value.firstOrNull { it.id == id } }
+                    if (tab != null) {
+                        withContext(Dispatchers.IO) { snapshots.load(tab.id) }?.let { launchSnapshot = tab.id to it.asImageBitmap() }
+                        selectTab(tab)
+                        prewarmRecentTabs()
+                    } else {
+                        openLauncher()
+                    }
+                }
             }
             startSyncLoop()
             while (isActive) {
@@ -331,6 +366,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun isDesktopMode() = sessions.isDesktopMode(activeTab)
 
     fun selectTab(tabId: String, tabUrl: String) {
+        if (launchSnapshot?.first != tabId) launchSnapshot = null
         val now = System.currentTimeMillis()
         lastSeen[activeTab] = now
         lastSeen[tabId] = now
@@ -991,6 +1027,12 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     override fun onPageLoaded(tabId: String) {
+        // Gecko restores the scroll offset right after the load; the picture leaves once that has happened.
+        // The blank page a new session starts on also reports a load, before any address: that one does not count.
+        if (launchSnapshot?.first == tabId && urls[tabId] != null) viewModelScope.launch {
+            delay(300)
+            launchSnapshot = null
+        }
         loadingTabs -= tabId
         if (tabId == activeTab) {
             loading = false

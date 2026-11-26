@@ -26,7 +26,11 @@ The app reuses desktop code or ports it closely:
 
 ## Features
 
-- Home: at launch nothing loads; the bottom bar morphs into the search, docked
+- Launch reopens the temporary tab used last (else the first one) and quietly
+  reloads the two before it; with no temporary tab, the home search opens.
+  A picture of the page taken when the app went to the background shows at
+  once while the page reloads underneath, so reopening looks instant.
+- Home: the bottom bar morphs into the search, docked
   above the keyboard. Before typing it lists recent searches and pages; while
   typing, open tabs, history and suggestions, best match nearest the bar.
   Swipe a suggestion left to uncover a remove button; removed entries never

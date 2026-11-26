@@ -1,5 +1,9 @@
 package app.zen.android.ui
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -514,7 +518,35 @@ private fun PageView(vm: BrowserViewModel, sampleColor: Boolean, landscape: Bool
                 view.setVerticalClipping(-((1f - shown) * barSpace).toInt())
             },
         )
+        val snapshot = vm.launchSnapshot?.takeIf { it.first == vm.activeTab }?.second
+        if (snapshot != null) {
+            // Any touch means the person wants the live page, ready or not.
+            Image(
+                snapshot,
+                null,
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) { awaitEachGesture { awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial); vm.dropSnapshot() } },
+                alignment = Alignment.TopCenter,
+                contentScale = ContentScale.FillWidth,
+            )
+            LaunchedEffect(snapshot) {
+                delay(8_000)
+                vm.dropSnapshot()
+            }
+        }
         PullIndicator(pull, vm.loading, Modifier.align(Alignment.TopCenter))
+    }
+
+    // The picture the next launch shows while the page reloads.
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) {
+        val view = geckoView ?: return@LifecycleEventEffect
+        if (!vm.hasPage || vm.privateMode) return@LifecycleEventEffect
+        view.capturePixels().accept({ bitmap: Bitmap? ->
+            if (bitmap == null) return@accept
+            val readable = if (bitmap.config == Bitmap.Config.HARDWARE) bitmap.copy(Bitmap.Config.ARGB_8888, false) else bitmap
+            vm.saveSnapshot(readable)
+        }, { null })
     }
 
     LaunchedEffect(vm.captureRequest, sampleColor) {

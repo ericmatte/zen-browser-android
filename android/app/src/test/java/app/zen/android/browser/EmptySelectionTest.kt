@@ -41,4 +41,19 @@ class EmptySelectionTest {
         assertTrue(EmptySelection.privateEntryShowsSearch(emptyList()))
         assertFalse(EmptySelection.privateEntryShowsSearch(listOf("p1")))
     }
+
+    @Test
+    fun `launch reopens the temporary tab used last`() {
+        assertEquals("t2", EmptySelection.atLaunch(recent = listOf("pinned", "t2", "t1"), temporary = listOf("t1", "t2")))
+    }
+
+    @Test
+    fun `launch opens the first temporary tab when none was used yet`() {
+        assertEquals("t1", EmptySelection.atLaunch(recent = listOf("pinned"), temporary = listOf("t1", "t2")))
+    }
+
+    @Test
+    fun `launch with no temporary tab opens the home search`() {
+        assertEquals(null, EmptySelection.atLaunch(recent = listOf("pinned"), temporary = emptyList()))
+    }
 }

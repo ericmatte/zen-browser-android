@@ -14,6 +14,10 @@ object EmptySelection {
         else -> (recent.firstOrNull() ?: temporary.firstOrNull() ?: spaceTabs.firstOrNull())?.let(Dismissal::Select) ?: Dismissal.Blank
     }
 
+    /** At launch: the temporary tab used last (else the first one) comes back; with none, the home search opens. */
+    fun atLaunch(recent: List<String>, temporary: List<String>): String? =
+        recent.firstOrNull { it in temporary } ?: temporary.firstOrNull()
+
     /** Entering private mode with nothing open goes straight to the search; otherwise the private sidebar lets the user pick. */
     fun privateEntryShowsSearch(privateTabs: List<String>): Boolean = privateTabs.isEmpty()
 }
