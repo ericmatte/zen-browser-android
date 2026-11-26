@@ -52,6 +52,7 @@ data class Preferences(
     val tracking: TrackingProtection = TrackingProtection.STANDARD,
     val globalPrivacyControl: Boolean = false,
     val adBlocking: Boolean = true,
+    val rejectCookieBanners: Boolean = true,
     val httpsOnly: HttpsOnly = HttpsOnly.PRIVATE,
     val dns: DnsOverHttps = DnsOverHttps.OFF,
     val stripTrackingParams: Boolean = true,
@@ -127,6 +128,7 @@ class AppSettings(context: Context) {
         putString("tracking", p.tracking.name)
         putBoolean("globalPrivacyControl", p.globalPrivacyControl)
         putBoolean("adBlocking", p.adBlocking)
+        putBoolean("rejectCookieBanners", p.rejectCookieBanners)
         putString("httpsOnly", p.httpsOnly.name)
         putString("dns", p.dns.name)
         putBoolean("stripTrackingParams", p.stripTrackingParams)
@@ -161,6 +163,7 @@ class AppSettings(context: Context) {
             tracking = enumOr(prefs.getString("tracking", null), d.tracking),
             globalPrivacyControl = prefs.getBoolean("globalPrivacyControl", d.globalPrivacyControl),
             adBlocking = prefs.getBoolean("adBlocking", d.adBlocking),
+            rejectCookieBanners = prefs.getBoolean("rejectCookieBanners", d.rejectCookieBanners),
             httpsOnly = enumOr(prefs.getString("httpsOnly", null), d.httpsOnly),
             dns = enumOr(prefs.getString("dns", null), d.dns),
             stripTrackingParams = prefs.getBoolean("stripTrackingParams", d.stripTrackingParams),

@@ -70,6 +70,11 @@ The app reuses desktop code or ports it closely:
   claims the page's address.
 - First launch: a welcome screen to sign in, make Zen the default browser and
   set up Obtainium; each step is optional and stays in Settings.
+- Cookie banners are refused for you (Settings → Privacy, on by default):
+  through the consent platform's own API when it is a known one (OneTrust,
+  Didomi, Cookiebot, Usercentrics, Axeptio, Osano…), else by clicking the
+  banner's own refuse or "necessary only" button; when neither exists the
+  banner stays for you to answer.
 - Ads blocked by uBlock Origin, installed from addons.mozilla.org and kept up
   to date (Settings → Privacy → Block ads turns it off).
 - Downloads: saved from Gecko's own response (signed-in and blob: files

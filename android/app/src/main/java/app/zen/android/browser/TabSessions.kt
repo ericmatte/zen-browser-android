@@ -80,6 +80,10 @@ object Gecko {
     const val UBLOCK_ID = "uBlock0@raymondhill.net"
     private const val UBLOCK_XPI = "https://addons.mozilla.org/firefox/downloads/latest/ublock-origin/latest.xpi"
     private var adBlocking: Boolean? = null
+
+    /** Read by the helper's cookies.js when a page loads. */
+    @Volatile var rejectCookieBanners = true
+        private set
     private var adBlockerChecked = false
 
     private fun setAdBlocking(runtime: GeckoRuntime, on: Boolean) {
@@ -177,6 +181,7 @@ object Gecko {
             setQueryParameterStrippingPrivateBrowsingEnabled(true)
         }
         r.settings.setGlobalPrivacyControl(prefs.globalPrivacyControl)
+        rejectCookieBanners = prefs.rejectCookieBanners
         r.settings.setAllowInsecureConnections(
             when (prefs.httpsOnly) {
                 app.zen.android.ui.HttpsOnly.OFF -> GeckoRuntimeSettings.ALLOW_ALL
@@ -417,6 +422,8 @@ class TabSessions(
                     val json = message as? org.json.JSONObject
                     when (json?.optString("type")) {
                         "videoRotated" -> events.onVideoRotated(tabId)
+                        // Answers travel as plain values: GeckoView cannot pass a JSONObject back to the page.
+                        "cookieBanners" -> return GeckoResult.fromValue(Gecko.rejectCookieBanners)
                     }
                     return GeckoResult.fromValue(true)
                 }
