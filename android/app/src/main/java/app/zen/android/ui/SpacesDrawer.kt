@@ -950,7 +950,7 @@ private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, dept
         commitEnd = if (tab.pinned) SwipeAction("unpin", "Unpin", accent) { vm.setPinned(tab, false, spaceUuid) } else null,
         modifier = Modifier.onGloballyPositioned { gestures.hitRects[tab.id] = it.boundsInRoot() to HeldTab(tab, spaceUuid, it.boundsInRoot()) },
     ) {
-        TabRow(tab, depth, tab.id == vm.activeTab, detour = vm.pinnedDetour(tab), onReset = { vm.resetPinnedTab(tab) }) {
+        TabRow(tab, depth, tab.id == vm.activeTab, detour = vm.pinnedDetour(tab), loading = vm.isLoading(tab.id), onReset = { vm.resetPinnedTab(tab) }) {
             vm.selectTab(tab)
             onOpen()
         }
@@ -958,7 +958,7 @@ private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, dept
 }
 
 @Composable
-private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, detour: TabItem? = null, onReset: () -> Unit = {}, onClick: () -> Unit) {
+private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, detour: TabItem? = null, loading: Boolean = false, onReset: () -> Unit = {}, onClick: () -> Unit) {
     val background = if (selected) selectedTabBackground() else Color.Transparent
     Row(
         Modifier
@@ -982,7 +982,8 @@ private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, detour: TabItem?
             )
         }
         val shown = detour ?: tab
-        Favicon(shown.url, shown.icon, SidebarIconSize)
+        // Loading is passed so a missing icon is fetched again once the page settles.
+        Favicon(shown.url, shown.icon, SidebarIconSize, loading = loading)
         Text(
             shown.title.ifBlank { UrlInput.display(shown.url) },
             Modifier.padding(start = SidebarIconGap),

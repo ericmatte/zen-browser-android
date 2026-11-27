@@ -178,7 +178,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     /** Between Gecko's page start and stop; progress alone can stall below 100 on pages that keep fetching. */
     var loading by mutableStateOf(false)
         private set
-    private val loadingTabs = mutableSetOf<String>()
+    private val loadingTabs = mutableStateMapOf<String, Unit>()
+
+    fun isLoading(tabId: String) = loadingTabs.containsKey(tabId)
     var chromeVisible by mutableStateOf(true)
         private set
     var fullScreen by mutableStateOf(false)
@@ -393,7 +395,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         canGoBack = backHistory[tabId] == true
         canGoForward = forwardHistory[tabId] == true
         reloading = false
-        loading = tabId in loadingTabs
+        loading = loadingTabs.containsKey(tabId)
         chromeVisible = true
         lastScrollY = 0
         endFind()
@@ -1094,7 +1096,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     override fun onPageStart(tabId: String) {
-        loadingTabs += tabId
+        loadingTabs[tabId] = Unit
         if (tabId == activeTab) {
             loading = true
             chromeVisible = true

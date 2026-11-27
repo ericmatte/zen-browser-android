@@ -126,7 +126,7 @@ fun ZenIconView(icon: ZenIcon?, size: Dp, tint: Color, fallback: (@Composable ()
  */
 object Favicons {
     private val memory = LruCache<String, ImageBitmap>(256)
-    private val failed = mutableSetOf<String>()
+    private val failed = app.zen.android.browser.FailedHosts()
 
     fun host(url: String): String? = runCatching { URL(url).host }.getOrNull()?.removePrefix("www.")?.takeIf { it.isNotEmpty() }
 
@@ -149,11 +149,18 @@ object Favicons {
         dataIcon?.let { decodeDataUrl(it) }?.let { return@withContext it }
         val host = host(pageUrl) ?: return@withContext null
         memory.get(host)?.let { return@withContext it }
-        if (host in failed) return@withContext null
+        if (!failed.shouldTry(host, System.currentTimeMillis())) return@withContext null
         val file = File(File(context.cacheDir, "favicons").apply { mkdirs() }, sha1(host))
         val bytes = if (file.exists()) file.readBytes() else runCatching { download(serviceUrl(host)) }.getOrNull()?.also { file.writeBytes(it) }
         val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }?.takeIf { it.width > 1 }?.asImageBitmap()
-        if (bitmap == null) failed += host else memory.put(host, bitmap)
+        if (bitmap == null) {
+            // A failed download must not stick on disk either, or the retry would read the same nothing.
+            file.delete()
+            failed.fail(host, System.currentTimeMillis())
+        } else {
+            failed.succeed(host)
+            memory.put(host, bitmap)
+        }
         bitmap
     }
 
