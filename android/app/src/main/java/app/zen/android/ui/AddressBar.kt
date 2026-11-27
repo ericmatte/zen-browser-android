@@ -1,5 +1,11 @@
 package app.zen.android.ui
 
+import kotlinx.coroutines.launch
+
+import androidx.compose.animation.core.FastOutSlowInEasing
+
+import androidx.compose.animation.core.Animatable
+
 import app.zen.android.browser.PageRequest
 import app.zen.android.browser.SiteUsage
 
@@ -572,7 +578,35 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
             },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(zenIcon(if (vm.privateMode) "privateBrowsing" else "sidebar"), if (vm.privateMode) "Private tabs" else "Spaces", Modifier.size(20.dp), tint = tint)
+        val bump = remember { Animatable(1f) }
+        val rise = remember { Animatable(1f) }
+        LaunchedEffect(vm.backgroundOpens) {
+            if (vm.backgroundOpens == 0) return@LaunchedEffect
+            haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            launch { rise.snapTo(0f); rise.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
+            bump.snapTo(1f)
+            bump.animateTo(1.35f, tween(120))
+            bump.animateTo(1f, spring(dampingRatio = 0.35f, stiffness = 600f))
+        }
+        Icon(
+            zenIcon(if (vm.privateMode) "privateBrowsing" else "sidebar"),
+            if (vm.privateMode) "Private tabs" else "Spaces",
+            Modifier.size(20.dp).graphicsLayer { scaleX = bump.value; scaleY = bump.value },
+            tint = tint,
+        )
+        if (rise.value < 1f) {
+            Text(
+                "+1",
+                // Stays inside the button's clip: it rises from the icon's corner toward the top edge.
+                Modifier.align(Alignment.Center).offset(x = 12.dp).graphicsLayer {
+                    translationY = -16.dp.toPx() * rise.value
+                    alpha = 1f - rise.value
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                color = tint,
+            )
+        }
     }
 }
 

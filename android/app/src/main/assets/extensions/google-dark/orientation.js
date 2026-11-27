@@ -34,6 +34,35 @@ const landscapeLayout = () =>
     setTimeout(done, 600);
   });
 
+// The site's own button sets the player up for fullscreen; covering a wrapper ourselves can leave it grey.
+const FULLSCREEN_LABEL = /full ?screen|plein [ée]cran|vollbild|pantalla completa/i;
+const fullscreenButton = (video) => {
+  for (let el = video.parentElement; el && el !== document.body; el = el.parentElement) {
+    const button = [...el.querySelectorAll("button, [role=button]")].find((b) =>
+      FULLSCREEN_LABEL.test([b.getAttribute("aria-label"), b.title, b.className, b.dataset?.titleNoTooltip].join(" ")),
+    );
+    if (button) return button;
+    if (area(el) > area(video) * 1.5) return null;
+  }
+  return null;
+};
+
+const showsVideo = (video) => {
+  const r = video.getBoundingClientRect();
+  return document.fullscreenElement?.contains(video) && r.width > innerWidth / 2 && r.height > 0;
+};
+
+const enterFullscreen = async (video) => {
+  const button = fullscreenButton(video);
+  if (button) button.click();
+  else await playerOf(video).requestFullscreen().catch(() => {});
+  await new Promise((r) => setTimeout(r, 500));
+  if (showsVideo(video)) return;
+  // Still grey or nothing happened: the bare video always draws itself.
+  if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+  await video.requestFullscreen().catch(() => {});
+};
+
 screen.orientation.addEventListener("change", async () => {
   if (screen.orientation.type.startsWith("landscape")) {
     if (document.fullscreenElement) return;
@@ -42,7 +71,7 @@ screen.orientation.addEventListener("change", async () => {
     // The app only lets a page cover the browser after a touch; this tells it a video asked, even a silent one.
     await browser.runtime.sendNativeMessage("zen", { type: "videoRotated" }).catch(() => {});
     await landscapeLayout();
-    if (!video.paused) playerOf(video).requestFullscreen().catch(() => {});
+    if (!video.paused) await enterFullscreen(video);
   } else if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});
   }

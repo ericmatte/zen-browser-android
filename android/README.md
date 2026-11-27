@@ -78,7 +78,8 @@ The app reuses desktop code or ports it closely:
   itself. The bar steps aside while a page's own text field uses the keyboard.
 - Landscape: the bar rests as a full-height strip on the left edge, painted
   in the page's colour like the status bar. Rotating
-  while a video plays (silent ones too) enters fullscreen; rotating back
+  while a video plays (silent ones too) enters fullscreen, through the
+  player's own fullscreen button when it has one (else the video itself); rotating back
   leaves it.
 - A tapped link that an installed app (YouTube, Maps…) claims opens in that
   app. Typed addresses and private tabs stay in Zen. "Open in <app>" in the
@@ -121,7 +122,9 @@ The app reuses desktop code or ports it closely:
   Google shows its own dark theme. Entering private mode with no tab opens the
   search (the Private label sits just above it); otherwise the private
   sidebar lets you pick. Launcher shortcut
-  "New private tab".
+  "New private tab". In private mode the link menu has no Glance, and "Open in
+  new private tab" opens it behind the current tab (the sidebar button bumps
+  with a "+1").
 - Pull a page down from its top to reload (only where Gecko allows overscroll,
   like Firefox for Android).
 - Glance, link menu, find in page, desktop site, downloads, file uploads,

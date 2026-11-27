@@ -223,9 +223,14 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect)
                 )
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 if (link != null) {
-                    MenuRow(select, "open", "Glance") { act { vm.openGlance(link) } }
+                    if (!vm.privateMode) MenuRow(select, "open", "Glance") { act { vm.openGlance(link) } }
                     if (!vm.privateMode) MenuRow(select, "plus", "Open in new tab") { act { vm.newTab(link) } }
-                    MenuRow(select, "privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
+                    // Already private: the new tab waits in the background, like a desktop middle-click.
+                    if (vm.privateMode) {
+                        MenuRow(select, "plus", "Open in new private tab") { act { vm.newPrivateTabInBackground(link) } }
+                    } else {
+                        MenuRow(select, "privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
+                    }
                     MenuRow(select, "link", "Copy link") {
                         act {
                             copyToClipboard(context, link)

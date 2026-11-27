@@ -614,6 +614,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         selectTab(tab)
     }
 
+    /** Counts tabs opened behind the current one, so the sidebar button can show where they went. */
+    var backgroundOpens by mutableStateOf(0)
+        private set
+
+    fun newPrivateTabInBackground(target: String) {
+        privateTabs += TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
+        backgroundOpens++
+    }
+
     fun togglePrivateMode() {
         if (privateMode) {
             privateMode = false
