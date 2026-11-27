@@ -2,6 +2,7 @@
 # Stop hook: once Claude has changed the Android app, it may not stop while a
 # newer stable GeckoView sits unused; it must upgrade and ship a release first.
 set -u
+command -v jq >/dev/null || { echo "check-geckoview: jq is missing" >&2; exit 0; }
 input=$(cat)
 [ "$(printf '%s' "$input" | jq -r '.stop_hook_active // false')" = "true" ] && exit 0
 
@@ -9,6 +10,8 @@ repo=$(cd "$(dirname "$0")/../.." && pwd)
 gradle="$repo/android/app/build.gradle.kts"
 cd "$repo" || exit 0
 
+# Releases are tagged on GitHub by gh, so local tags lag behind.
+git fetch -q --tags origin 2>/dev/null
 last_tag=$(git tag -l 'android-v*' --sort=-v:refname | head -1)
 unreleased=$(git log --oneline "${last_tag:-HEAD}..HEAD" -- android 2>/dev/null | head -1)
 dirty=$(git status --porcelain -- android 2>/dev/null | head -1)

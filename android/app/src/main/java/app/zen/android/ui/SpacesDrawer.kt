@@ -500,7 +500,6 @@ private fun EssentialTile(tab: TabItem, selected: Boolean, dimmed: Boolean, modi
             .graphicsLayer { alpha = if (dimmed) 0.35f else 1f }
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) selectedTabBackground() else toolbarElementBackground())
-            // The selected essential is outlined in its favicon's colour.
             .border(if (selected) 2.dp else 0.dp, if (selected) ring else Color.Transparent, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,

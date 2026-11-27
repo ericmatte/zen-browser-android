@@ -24,4 +24,7 @@ class UrlInputTest {
         assertTrue(UrlInput.isPlaceholder(""))
         assertFalse(UrlInput.isPlaceholder("https://news.ycombinator.com/"))
     }
+    @Test fun `a decimal number is searched`() = assertEquals(SearchEngine.GOOGLE.search("3.14"), UrlInput.resolve("3.14"))
+    @Test fun `an ip address is a url`() = assertEquals("https://192.168.1.1:8080", UrlInput.resolve("192.168.1.1:8080"))
+    @Test fun `a multi-part domain is a url`() = assertEquals("https://news.bbc.co.uk", UrlInput.resolve("news.bbc.co.uk"))
 }

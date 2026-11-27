@@ -247,6 +247,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     private val openedHere = settings.string("openedHere")?.split(',')?.filter { it.isNotEmpty() }?.toMutableSet() ?: mutableSetOf()
     private val lastSeen = mutableMapOf<String, Long>()
+    private val startedAt = System.currentTimeMillis()
 
     init {
         applyThemeMode(settings.state.value.themeMode)
@@ -284,11 +285,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
-    /** Closes the phone's temporary tabs once they sit unseen longer than the chosen delay. */
     private fun cleanUpIdleTabs() {
         val hours = settings.state.value.tabCleanup.hours ?: return
         val ids = localTabs.value.map { it.id }
-        val expired = app.zen.android.browser.TabCleanupRule.expired(ids, ids.toSet(), lastSeen, activeTab, System.currentTimeMillis(), hours * 3_600_000)
+        val expired = app.zen.android.browser.TabCleanupRule.expired(ids, ids.toSet(), lastSeen, activeTab, System.currentTimeMillis(), hours * 3_600_000, startedAt)
         closeTabs(expired)
     }
 
@@ -1165,7 +1165,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         val total = response.headers["Content-Length"]?.toLongOrNull() ?: 0L
         val body = response.body
         val start = DownloadItem(UUID.randomUUID().toString(), name, mime, null, total, 0, DownloadStatus.RUNNING, System.currentTimeMillis(), response.uri)
-        if (body == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        if (body == null) {
             runCatching { body?.close() }
             putDownload(start.copy(status = DownloadStatus.FAILED))
             message = "Download failed"
@@ -1174,7 +1174,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         putDownload(start)
         message = "Downloading $name"
         // A link that opens straight onto a file leaves an empty tab behind; desktop closes it, and so do we.
-        if (backHistory[tabId] != true && (urls[tabId] ?: "").let { it == response.uri || UrlInput.isPlaceholder(it) }) closeTab(tabId)
+        if (isLocalTab(tabId) && backHistory[tabId] != true && (urls[tabId] ?: "").let { it == response.uri || UrlInput.isPlaceholder(it) }) closeTab(tabId)
         viewModelScope.launch {
             val resolver = app.contentResolver
             val done = withContext(Dispatchers.IO) {

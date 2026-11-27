@@ -13,7 +13,9 @@ object TabCleanupRule {
         active: String,
         now: Long,
         maxIdleMillis: Long,
+        // Seen times live in memory only; a tab not seen since the app started counts from the start.
+        startedAt: Long,
     ): List<String> = unpinned.filter { id ->
-        id != active && id in openedHere && now - (lastSeen[id] ?: 0L) >= maxIdleMillis
+        id != active && id in openedHere && now - (lastSeen[id] ?: startedAt) >= maxIdleMillis
     }
 }

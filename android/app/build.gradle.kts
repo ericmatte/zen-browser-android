@@ -18,10 +18,10 @@ android {
 
     defaultConfig {
         applicationId = "app.zen.android"
-        minSdk = 26
+        minSdk = 29
         targetSdk = 35
-        versionCode = 27
-        versionName = "0.7.5"
+        versionCode = 28
+        versionName = "0.7.6"
     }
 
     signingConfigs {

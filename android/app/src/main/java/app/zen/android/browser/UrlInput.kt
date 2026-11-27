@@ -17,7 +17,7 @@ enum class SearchEngine(val label: String, val home: String, private val query: 
 
 object UrlInput {
     private val scheme = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
-    private val hostLike = Regex("^(localhost|[\\w-]+(\\.[\\w-]+)+|\\d{1,3}(\\.\\d{1,3}){3})(:\\d+)?(/.*)?$")
+    private val hostLike = Regex("^(localhost|[\\w-]+(\\.[\\w-]+)*\\.[a-zA-Z][\\w-]*|\\d{1,3}(\\.\\d{1,3}){3})(:\\d+)?(/.*)?$")
 
     fun resolve(input: String, engine: SearchEngine = SearchEngine.GOOGLE): String {
         val text = input.trim()

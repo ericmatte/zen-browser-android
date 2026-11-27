@@ -19,6 +19,8 @@ class PageSnapshot(private val dir: File) {
         dir.mkdirs()
         val tmp = File(dir, "page.webp.tmp")
         tmp.outputStream().use { bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 80, it) }
+        // Owner first out, last in: a crash in between leaves no owner, never another tab's picture.
+        owner.delete()
         tmp.renameTo(image)
         owner.writeText(tabId)
     }

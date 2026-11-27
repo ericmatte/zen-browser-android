@@ -16,7 +16,6 @@ import app.zen.android.browser.Updates
 /** Dark enough to read as text on light surfaces, bright enough on dark ones. */
 val UpdateOrange = Color(0xFFF08A24)
 
-/** Marks the ⋯ button while an app update is waiting. */
 @Composable
 fun UpdateDot(modifier: Modifier = Modifier) {
     Box(modifier.size(8.dp).clip(CircleShape).background(UpdateOrange))
