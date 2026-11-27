@@ -23,3 +23,23 @@ class SitePermissionsTest {
         assertEquals(emptyList<SitePermissionRow>(), SitePermissions.rows(listOf(P.PERMISSION_GEOLOCATION to prompt, 999 to allow)))
     }
 }
+
+class MediaDecisionsTest {
+    private val store = mutableMapOf<String, Boolean>()
+    private val decisions = MediaDecisions({ store[it] }) { k, v -> if (v == null) store.remove(k) else store[k] = v }
+
+    @Test
+    fun `an answer is remembered for the site, whichever it was`() {
+        decisions.remember("a.com", listOf(CAMERA_KIND), false)
+        assertEquals(false, decisions.decided("a.com", listOf(CAMERA_KIND)))
+        decisions.remember("b.com", listOf(CAMERA_KIND, MICROPHONE_KIND), true)
+        assertEquals(true, decisions.decided("b.com", listOf(CAMERA_KIND, MICROPHONE_KIND)))
+    }
+
+    @Test
+    fun `a device never answered still asks`() {
+        decisions.remember("a.com", listOf(CAMERA_KIND), true)
+        assertEquals(null, decisions.decided("a.com", listOf(CAMERA_KIND, MICROPHONE_KIND)))
+        assertEquals(listOf(SitePermissionRow(CAMERA_KIND, "Camera", true)), decisions.rows("a.com"))
+    }
+}

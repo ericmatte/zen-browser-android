@@ -61,6 +61,13 @@ class PageRequests(
     var current by mutableStateOf<PageRequest?>(null)
         private set
     var bridge: ActivityBridge? = null
+    private val mediaStore = context.getSharedPreferences("site-media", Context.MODE_PRIVATE)
+    val media = MediaDecisions(
+        read = { if (mediaStore.contains(it)) mediaStore.getBoolean(it, false) else null },
+        write = { k, v -> mediaStore.edit().apply { if (v == null) remove(k) else putBoolean(k, v) }.apply() },
+    )
+
+    fun forgetMedia() = mediaStore.edit().clear().apply()
 
     private val queue = ArrayDeque<PageRequest>()
 
@@ -199,9 +206,13 @@ class PageRequests(
             return
         }
         val host = runCatching { Uri.parse(uri).host }.getOrNull() ?: "This site"
+        val kinds = listOfNotNull(CAMERA_KIND.takeIf { wantsVideo }, MICROPHONE_KIND.takeIf { wantsAudio })
+        fun answer(ok: Boolean) = if (ok) callback.grant(video?.firstOrNull(), audio?.firstOrNull()) else callback.reject()
+        media.decided(host, kinds)?.let { return answer(it) }
         val wants = listOfNotNull(video?.firstOrNull()?.let { "camera" }, audio?.firstOrNull()?.let { "microphone" }).joinToString(" and ")
-        show(PageRequest.Permission(host, "$host wants to use your $wants.", canRemember = false) { ok, _ ->
-            if (ok) callback.grant(video?.firstOrNull(), audio?.firstOrNull()) else callback.reject()
+        show(PageRequest.Permission(host, "$host wants to use your $wants.", canRemember = !session.settings.usePrivateMode) { ok, remember ->
+            if (remember) media.remember(host, kinds, ok)
+            answer(ok)
         })
     }
 }

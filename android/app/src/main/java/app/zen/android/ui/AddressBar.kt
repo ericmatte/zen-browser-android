@@ -605,9 +605,17 @@ class RecentsMenu {
     }
 }
 
+private val SitePopoverWidth = 290.dp
+
+/** The bar's favicon centre from its start: the sidebar button, then half the 22dp icon. */
+private val FaviconCentre get() = BarButtonWidth + 11.dp
+
+/** Start tails count from the bottom; a distance past the top pins the tail to the popover's top, beside the strip's favicon. */
+private val SiteTailAtTop = 4000.dp
+
 /** Tapping the favicon shows what the site may do here, like desktop's site panel. */
 @Composable
-fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
+fun SitePopover(vm: BrowserViewModel, landscape: Boolean, modifier: Modifier) {
     fun close() {
         vm.siteInfoOpen = false
     }
@@ -623,15 +631,16 @@ fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
         enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 1000f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeIn(tween(80)),
         exit = scaleOut(tween(90), targetScale = 0.85f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeOut(tween(90)),
     ) {
-        val muted = LocalContentColor.current.copy(alpha = 0.6f)
+        val bubble = if (landscape) BubbleShape(TailSide.Start, SiteTailAtTop) else BubbleShape(TailSide.Bottom, SitePopoverWidth - FaviconCentre)
         Surface(
-            Modifier.width(290.dp),
-            shape = RoundedCornerShape(20.dp),
+            Modifier.width(SitePopoverWidth),
+            shape = bubble,
             color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
             contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
             shadowElevation = 14.dp,
         ) {
-            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+            val muted = LocalContentColor.current.copy(alpha = 0.6f)
+            Column(Modifier.padding(bubble.contentPadding).verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
                 if (ask != null) {
                     PermissionAsk(ask) { vm.requests.resolved() }
                     if (!vm.siteInfoOpen) return@Column

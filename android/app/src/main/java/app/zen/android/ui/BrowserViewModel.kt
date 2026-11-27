@@ -72,6 +72,8 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.StorageController
 import app.zen.android.browser.SitePermissionRow
 import app.zen.android.browser.SitePermissions
+import app.zen.android.browser.CAMERA_KIND
+import app.zen.android.browser.MICROPHONE_KIND
 import app.zen.android.browser.PinnedChange
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
 import org.mozilla.geckoview.GeckoSession.FinderResult
@@ -965,6 +967,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         val storage = Gecko.runtime(getApplication()).storageController
         storage.getAllPermissions().accept { perms ->
             perms?.forEach { storage.setPermission(it, GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT) }
+            requests.forgetMedia()
             message = "Site permissions reset"
         }
     }
@@ -995,11 +998,16 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         Gecko.runtime(getApplication()).storageController.getPermissions(url, privateMode).accept { list ->
             if (url != this.url) return@accept
             storedPermissions = list.orEmpty()
-            sitePermissions = SitePermissions.rows(storedPermissions.map { it.permission to it.value })
+            val host = Uri.parse(url).host.orEmpty()
+            sitePermissions = (SitePermissions.rows(storedPermissions.map { it.permission to it.value }) + requests.media.rows(host)).sortedBy { it.label }
         }
     }
 
     fun setSitePermission(row: SitePermissionRow, allowed: Boolean?) {
+        if (row.kind == CAMERA_KIND || row.kind == MICROPHONE_KIND) {
+            requests.media.remember(Uri.parse(url).host.orEmpty(), listOf(row.kind), allowed)
+            return loadSitePermissions()
+        }
         val perm = storedPermissions.firstOrNull { it.permission == row.kind } ?: return
         val value = when (allowed) {
             true -> GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW

@@ -253,10 +253,11 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                 )
                 SitePopover(
                     vm,
+                    landscape,
                     if (landscape) {
                         Modifier.align(Alignment.TopStart).statusBarsPadding().then(besideBar).padding(top = 8.dp)
                     } else {
-                        Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = inset, bottom = barLift)
+                        Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = inset, bottom = barLift - 3.dp)
                     },
                 )
                 BarMenu(
