@@ -1,5 +1,11 @@
 package app.zen.android.ui
 
+import androidx.compose.ui.layout.onGloballyPositioned
+
+import androidx.compose.ui.layout.boundsInRoot
+
+import androidx.compose.animation.ExitTransition
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
@@ -188,6 +194,9 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect)
     val media = element.srcUri
     val target = link ?: media ?: return
     if (current != null) BackHandler { vm.contextMenu = null }
+    // Opening in the background hands the sheet itself to the flight animation, so it must vanish without its own exit.
+    var handedOff by remember { mutableStateOf(false) }
+    LaunchedEffect(current) { if (current != null) handedOff = false }
     fun act(block: () -> Unit) {
         vm.contextMenu = null
         block()
@@ -204,10 +213,10 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect)
         current != null,
         modifier = Modifier.align(Alignment.BottomCenter),
         enter = slideInVertically(spring(dampingRatio = 0.85f, stiffness = 500f)) { it } + fadeIn(tween(120)),
-        exit = slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
+        exit = if (handedOff) ExitTransition.None else slideOutVertically(tween(180)) { it } + fadeOut(tween(180)),
     ) {
         Surface(
-            Modifier.navigationBarsPadding().padding(12.dp).fillMaxWidth(),
+            Modifier.navigationBarsPadding().padding(12.dp).fillMaxWidth().onGloballyPositioned { vm.contextMenuBounds = it.boundsInRoot() },
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             shadowElevation = 16.dp,
@@ -227,7 +236,10 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect)
                     if (!vm.privateMode) MenuRow(select, "plus", "Open in new tab") { act { vm.newTab(link) } }
                     // Already private: the new tab waits in the background, like a desktop middle-click.
                     if (vm.privateMode) {
-                        MenuRow(select, "plus", "Open in new private tab") { act { vm.newPrivateTabInBackground(link) } }
+                        MenuRow(select, "plus", "Open in new private tab") { 
+                            handedOff = true
+                            act { vm.newPrivateTabInBackground(link) }
+                         }
                     } else {
                         MenuRow(select, "privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
                     }

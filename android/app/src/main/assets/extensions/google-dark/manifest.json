@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Zen Android helpers",
-  "version": "3.13",
+  "version": "3.14",
   "description": "Google's own dark theme in private browsing, fullscreen video on rotation, and no sideways scrolling on phone layouts.",
   "browser_specific_settings": { "gecko": { "id": "google-dark@zen.android" } },
   "permissions": ["nativeMessaging", "nativeMessagingFromContent", "geckoViewAddons", "webRequest", "webRequestBlocking", "*://*.google.com/*", "*://*.google.ca/*", "*://*.google.fr/*", "*://*.google.co.uk/*"],

@@ -62,11 +62,18 @@
     return found;
   };
 
-  const viaButton = () => {
+  // Step 3: banners that only inform ("this site uses cookies", OK / Customize) offer nothing to refuse;
+  // their plain acknowledgement is dismissed, never an "accept all".
+  const acknowledge = [
+    /^ok(ay)?!?$/, /^got it!?$/, /^understood$/, /^i understand$/, /^dismiss$/, /^close$/,
+    /^j'ai compris$/, /^compris$/, /^d'accord$/, /^fermer$/,
+  ];
+
+  const viaButton = (patterns) => {
     for (const root of roots()) {
       for (const button of root.querySelectorAll("button, [role=button], a, input[type=button], input[type=submit]")) {
         const label = (button.innerText || button.value || button.getAttribute("aria-label") || "").trim().toLowerCase().replace(/\s+/g, " ");
-        if (!label || label.length > 60 || !refuse.some((r) => r.test(label))) continue;
+        if (!label || label.length > 60 || !patterns.some((r) => r.test(label))) continue;
         if (!button.offsetParent && getComputedStyle(button).position !== "fixed") continue;
         if (!isBanner(button)) continue;
         button.click();
@@ -79,7 +86,7 @@
   // Banners often appear a little after the page; look again for a few seconds, then leave it be.
   let tries = 0;
   const attempt = () => {
-    if (viaPlatform() || viaButton()) return;
+    if (viaPlatform() || viaButton(refuse) || viaButton(acknowledge)) return;
     if (++tries < 12) setTimeout(attempt, 700);
   };
   if (document.readyState === "loading") addEventListener("DOMContentLoaded", attempt, { once: true });

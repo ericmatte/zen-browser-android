@@ -90,8 +90,9 @@ The app reuses desktop code or ports it closely:
 - Cookie banners are refused for you (Settings → Privacy, on by default):
   through the consent platform's own API when it is a known one (OneTrust,
   Didomi, Cookiebot, Usercentrics, Axeptio, Osano…), else by clicking the
-  banner's own refuse or "necessary only" button; when neither exists the
-  banner stays for you to answer.
+  banner's own refuse or "necessary only" button. A banner that only informs
+  (OK / Customize, nothing to refuse) is dismissed with its OK; one with only
+  "accept all" stays for you to answer.
 - Ads blocked by uBlock Origin, installed from addons.mozilla.org and kept up
   to date (Settings → Privacy → Block ads turns it off).
 - Downloads: saved from Gecko's own response (signed-in and blob: files
@@ -128,9 +129,9 @@ The app reuses desktop code or ports it closely:
   search (the Private label sits just above it); otherwise the private
   sidebar lets you pick. Launcher shortcut
   "New private tab". In private mode the link menu has no Glance, and "Open in
-  new private tab" opens it behind the current tab (a card flies into the
-  sidebar button, which bumps
-  with a "+1").
+  new private tab" opens it right after the current tab, newest nearest: the
+  link menu turns into a small preview of the page and slides off to the
+  right, where the next tab is.
 - Pull a page down from its top to reload (only where Gecko allows overscroll,
   like Firefox for Android).
 - Glance, link menu, find in page, desktop site, downloads, file uploads,

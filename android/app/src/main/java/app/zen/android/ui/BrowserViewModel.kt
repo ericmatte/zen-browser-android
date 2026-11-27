@@ -622,11 +622,12 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var lastBackgroundUrl by mutableStateOf("")
         private set
 
-    /** Root position of the bar's sidebar button centre, where background tabs fly to. */
-    var sidebarButtonCenter by mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified)
+    /** Where the link menu sat, so a tab opened in the background can grow out of it. */
+    var contextMenuBounds by mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
 
     fun newPrivateTabInBackground(target: String) {
-        addPrivateTab(TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false))
+        // Right after the current tab, so the newest is the next one, like a browser's "open in background".
+        addPrivateTab(TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false), after = activeTab)
         lastBackgroundUrl = target
         backgroundOpens++
     }
@@ -635,14 +636,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     private var volumeBeforePrivate: Int? = null
 
     /** The first private page of a session is what gets muted, not merely opening private mode. */
-    private fun addPrivateTab(tab: TabItem) {
+    private fun addPrivateTab(tab: TabItem, after: String? = null) {
         val stream = android.media.AudioManager.STREAM_MUSIC
         val volume = audio.getStreamVolume(stream)
         if (volumeBeforePrivate == null && PrivateMute.shouldMute(privateTabs.size, volume)) {
             // Do Not Disturb can forbid volume changes; the tab must still open.
             if (runCatching { audio.setStreamVolume(stream, 0, android.media.AudioManager.FLAG_SHOW_UI) }.isSuccess) volumeBeforePrivate = volume
         }
-        privateTabs += tab
+        val at = privateTabs.indexOfFirst { it.id == after }
+        if (at >= 0) privateTabs.add(at + 1, tab) else privateTabs += tab
     }
 
     fun togglePrivateMode() {
