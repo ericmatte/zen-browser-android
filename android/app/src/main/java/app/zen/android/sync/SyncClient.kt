@@ -68,28 +68,40 @@ class SyncClient(
     }
 
     fun fetch(collection: String, newerThan: Double = 0.0): Pair<List<Bso>, Double> {
-        val key = keyFor(collection)
         val res = storage("GET", "storage/$collection?full=1&newer=$newerThan")
         val lastModified = res.headers["x-last-modified"]?.toDoubleOrNull() ?: newerThan
         val array = JSONArray(res.body)
-        val records = (0 until array.length()).map { i ->
-            val raw = array.getJSONObject(i)
-            Bso(raw.getString("id"), JSONObject(key.decrypt(raw.getString("payload"))), raw.optDouble("modified", 0.0))
+        val raws = (0 until array.length()).map { array.getJSONObject(it) }
+        var key = keyFor(collection)
+        fun open(raw: JSONObject) = runCatching { Bso(raw.getString("id"), JSONObject(key.decrypt(raw.getString("payload"))), raw.optDouble("modified", 0.0)) }.getOrNull()
+        var records = raws.map(::open)
+        // Desktop re-keys when Sync is reset; the cached keys then fail on every record until they are fetched again.
+        if (records.any { it == null }) {
+            defaultKey = null
+            keys = null
+            key = keyFor(collection)
+            records = raws.map(::open)
         }
-        return records to lastModified
+        // A record that still cannot be read is skipped, so one bad record never blocks the rest of the sync.
+        return records.filterNotNull() to lastModified
     }
 
     fun upload(collection: String, records: List<Pair<String, JSONObject>>): Double {
         if (records.isEmpty()) return 0.0
         val key = keyFor(collection)
-        val body = JSONArray()
-        records.forEach { (id, cleartext) ->
-            body.put(JSONObject().put("id", id).put("payload", key.encrypt(cleartext.toString())))
+        var modified = 0.0
+        // The storage server refuses a POST of more than 100 records.
+        records.chunked(100).forEach { chunk ->
+            val body = JSONArray()
+            chunk.forEach { (id, cleartext) ->
+                body.put(JSONObject().put("id", id).put("payload", key.encrypt(cleartext.toString())))
+            }
+            val res = JSONObject(storage("POST", "storage/$collection", body.toString()).body)
+            val failed = res.optJSONObject("failed")
+            if (failed != null && failed.length() > 0) throw IllegalStateException("Sync rejected: $failed")
+            modified = res.optDouble("modified", modified)
         }
-        val res = storage("POST", "storage/$collection", body.toString())
-        val failed = JSONObject(res.body).optJSONObject("failed")
-        if (failed != null && failed.length() > 0) throw IllegalStateException("Sync rejected: $failed")
-        return JSONObject(res.body).optDouble("modified", 0.0)
+        return modified
     }
 
     private fun bundleFrom(pair: JSONArray) = KeyBundle(B64.fromStd(pair.getString(0)), B64.fromStd(pair.getString(1)))

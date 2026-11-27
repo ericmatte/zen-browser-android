@@ -57,7 +57,6 @@ class MainActivity : ComponentActivity(), ActivityBridge {
             } || vm.privateMode
             val spaceAccent = vm.space(vm.activeSpace)?.theme.accent()
             ZenTheme(dark = dark, accent = spaceAccent ?: systemAccent()) {
-                val prefs by vm.settings.state.collectAsStateWithLifecycle()
                 val haptics = LocalHapticFeedback.current
                 CompositionLocalProvider(LocalHapticFeedback provides if (prefs.haptics) haptics else NoHaptics) {
                     BrowserScreen(vm, dark)
@@ -105,11 +104,14 @@ class MainActivity : ComponentActivity(), ActivityBridge {
     }
 
     override fun requestPermissions(permissions: Array<String>, result: (Boolean) -> Unit) {
+        // A page that asks again before the first answer would otherwise leave the first request waiting forever.
+        permissionResult?.invoke(false)
         permissionResult = result
         permissionLauncher.launch(permissions)
     }
 
     override fun pickFiles(mimeTypes: Array<String>, multiple: Boolean, result: (List<Uri>) -> Unit) {
+        singleFileResult?.invoke(emptyList())
         singleFileResult = result
         if (multiple) multiFileLauncher.launch(mimeTypes) else singleFileLauncher.launch(mimeTypes)
     }

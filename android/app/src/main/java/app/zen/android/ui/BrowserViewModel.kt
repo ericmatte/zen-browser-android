@@ -1215,6 +1215,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
                     start.copy(name = saved, uri = uri.toString(), received = received, total = maxOf(total, received), status = DownloadStatus.DONE)
                 } catch (e: Exception) {
                     uri?.let { runCatching { resolver.delete(it, null, null) } }
+                    if (e is kotlinx.coroutines.CancellationException) throw e
                     start.copy(status = DownloadStatus.FAILED)
                 }
             }
