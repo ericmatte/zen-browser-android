@@ -72,8 +72,9 @@ The app reuses desktop code or ports it closely:
   in the page's colour like the status bar. Rotating
   while a video plays (silent ones too) enters fullscreen; rotating back
   leaves it.
-- "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
-  claims the page's address.
+- A tapped link that an installed app (YouTube, Maps…) claims opens in that
+  app. Typed addresses and private tabs stay in Zen. "Open in <app>" in the
+  ⋯ menu does the same for the page shown.
 - First launch: a welcome screen to sign in, make Zen the default browser and
   set up Obtainium; each step is optional.
 - Cookie banners are refused for you (Settings → Privacy, on by default):

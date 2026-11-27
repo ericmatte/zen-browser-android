@@ -1,7 +1,9 @@
 package app.zen.android.browser
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppLinksTest {
@@ -20,5 +22,17 @@ class AppLinksTest {
     @Test
     fun `this app is never offered`() {
         assertNull(AppLinks.pick(listOf("app.zen.android"), emptySet(), "app.zen.android"))
+    }
+
+    @Test
+    fun `a tapped link leaves for its app`() {
+        assertTrue(AppLinks.handsOff(userGesture = true, directNavigation = false, privateTab = false))
+    }
+
+    @Test
+    fun `typed addresses, scripts and private tabs stay in the browser`() {
+        assertFalse(AppLinks.handsOff(userGesture = true, directNavigation = true, privateTab = false))
+        assertFalse(AppLinks.handsOff(userGesture = false, directNavigation = false, privateTab = false))
+        assertFalse(AppLinks.handsOff(userGesture = true, directNavigation = false, privateTab = true))
     }
 }

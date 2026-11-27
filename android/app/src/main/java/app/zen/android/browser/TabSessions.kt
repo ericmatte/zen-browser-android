@@ -362,6 +362,10 @@ class TabSessions(
                 if (events.interceptNavigation(tabId, request.uri)) return GeckoResult.deny()
                 val scheme = request.uri.substringBefore(':').lowercase()
                 if (scheme !in WEB_SCHEMES && openExternally(request.uri)) return GeckoResult.deny()
+                if (AppLinks.handsOff(request.hasUserGesture, request.isDirectNavigation, isPrivateTab(tabId))) {
+                    val app = AppLinks.find(context, request.uri)
+                    if (app != null && AppLinks.open(context, request.uri, app)) return GeckoResult.deny()
+                }
                 return null
             }
 

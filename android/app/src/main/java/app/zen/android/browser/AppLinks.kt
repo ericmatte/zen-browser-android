@@ -19,6 +19,10 @@ object AppLinks {
     fun pick(handlers: List<String>, browsers: Set<String>, self: String): String? =
         handlers.firstOrNull { it != self && it !in browsers }
 
+    /** Only a link the user taps leaves for an app: typed addresses, page scripts and private tabs stay here. */
+    fun handsOff(userGesture: Boolean, directNavigation: Boolean, privateTab: Boolean): Boolean =
+        userGesture && !directNavigation && !privateTab
+
     fun find(context: Context, url: String): NativeApp? {
         val scheme = Uri.parse(url).scheme?.lowercase()
         if (scheme != "http" && scheme != "https") return null
