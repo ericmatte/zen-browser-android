@@ -52,14 +52,21 @@ const showsVideo = (video) => {
   return document.fullscreenElement?.contains(video) && r.width > innerWidth / 2 && r.height > 0;
 };
 
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Each fullscreen request is announced: the app only lets it through right after a fresh notice.
+const announce = () => browser.runtime.sendNativeMessage("zen", { type: "videoRotated" }).catch(() => {});
+
 const enterFullscreen = async (video) => {
+  await announce();
   const button = fullscreenButton(video);
   if (button) button.click();
   else await playerOf(video).requestFullscreen().catch(() => {});
-  await new Promise((r) => setTimeout(r, 500));
+  await wait(500);
   if (showsVideo(video)) return;
   // Still grey or nothing happened: the bare video always draws itself.
   if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+  await announce();
   await video.requestFullscreen().catch(() => {});
 };
 
@@ -68,9 +75,9 @@ screen.orientation.addEventListener("change", async () => {
     if (document.fullscreenElement) return;
     const video = playingVideo();
     if (!video) return;
-    // The app only lets a page cover the browser after a touch; this tells it a video asked, even a silent one.
-    await browser.runtime.sendNativeMessage("zen", { type: "videoRotated" }).catch(() => {});
     await landscapeLayout();
+    // Players still resize for a moment after the layout turns; going fullscreen during that shows grey.
+    await wait(700);
     if (!video.paused) await enterFullscreen(video);
   } else if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});

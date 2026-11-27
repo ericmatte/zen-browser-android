@@ -34,4 +34,9 @@ class FullScreenGateTest {
     fun `an old helper report does not authorize a later rotation`() {
         assertFalse(FullScreenGate.allowed(now = 10_000, lastTouch = 0, lastRotation = 9_900, mediaPlaying = false, lastVideoRotated = 5_000))
     }
+
+    @Test
+    fun `the helper may wait for the player to settle after the turn`() {
+        assertTrue(FullScreenGate.allowed(now = 10_000, lastTouch = 0, lastRotation = 7_000, mediaPlaying = false, lastVideoRotated = 9_900))
+    }
 }

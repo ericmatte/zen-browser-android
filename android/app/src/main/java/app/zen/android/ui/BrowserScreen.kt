@@ -251,6 +251,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                         Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = inset, bottom = barLift)
                     },
                 )
+                BackgroundTabFlight(vm)
                 SitePopover(
                     vm,
                     landscape,

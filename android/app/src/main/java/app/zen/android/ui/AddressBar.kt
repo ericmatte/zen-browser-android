@@ -1,5 +1,13 @@
 package app.zen.android.ui
 
+import androidx.compose.ui.geometry.isSpecified
+
+import androidx.compose.foundation.layout.widthIn
+
+import androidx.compose.foundation.layout.BoxWithConstraints
+
+import kotlinx.coroutines.delay
+
 import kotlinx.coroutines.launch
 
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -545,7 +553,10 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
             .size(BarButtonWidth, 48.dp)
             .pressScale()
             .clip(RoundedCornerShape(24.dp))
-            .onGloballyPositioned { origin = it.positionInRoot() }
+            .onGloballyPositioned {
+                origin = it.positionInRoot()
+                vm.sidebarButtonCenter = origin + Offset(it.size.width / 2f, it.size.height / 2f)
+            }
             .pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown()
@@ -583,6 +594,8 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
         LaunchedEffect(vm.backgroundOpens) {
             if (vm.backgroundOpens == 0) return@LaunchedEffect
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+            // Lands when the flying tab reaches the button.
+            delay(BackgroundFlightMillis.toLong())
             launch { rise.snapTo(0f); rise.animateTo(1f, tween(700, easing = FastOutSlowInEasing)) }
             bump.snapTo(1f)
             bump.animateTo(1.35f, tween(120))
@@ -647,6 +660,63 @@ private val FaviconCentre get() = BarButtonWidth + 11.dp
 
 /** Start tails count from the bottom; a distance past the top pins the tail to the popover's top, beside the strip's favicon. */
 private val SiteTailAtTop = 4000.dp
+
+const val BackgroundFlightMillis = 700
+
+/** A link opened behind the current tab flies, as a small tab card, from mid-screen into the sidebar button. */
+@Composable
+fun BackgroundTabFlight(vm: BrowserViewModel) {
+    val progress = remember { Animatable(1f) }
+    var url by remember { mutableStateOf("") }
+    LaunchedEffect(vm.backgroundOpens) {
+        if (vm.backgroundOpens == 0) return@LaunchedEffect
+        url = vm.lastBackgroundUrl
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(BackgroundFlightMillis, easing = FastOutSlowInEasing))
+    }
+    val target = vm.sidebarButtonCenter
+    if (progress.value >= 1f || !target.isSpecified) return
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    var card by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInRoot() }) {
+        val start = Offset(constraints.maxWidth / 2f, constraints.maxHeight * 0.45f)
+        val end = target - origin
+        val t = progress.value
+        Surface(
+            Modifier
+                .graphicsLayer {
+                    // Arcs a little upward first, so it reads as a throw toward the button.
+                    val x = start.x + (end.x - start.x) * t
+                    val y = start.y + (end.y - start.y) * t - 120.dp.toPx() * t * (1 - t)
+                    translationX = x - card.width / 2f
+                    translationY = y - card.height / 2f
+                    val s = 1f - 0.8f * t
+                    scaleX = s
+                    scaleY = s
+                    alpha = if (t < 0.85f) 1f else (1f - t) / 0.15f
+                }
+                .onSizeChanged { card = it },
+            shape = RoundedCornerShape(16.dp),
+            // Lighter than private pages, which are near-black, so the card stands out on its way.
+            color = Color(0xFF3B3B46),
+            contentColor = Color.White,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+            shadowElevation = 16.dp,
+        ) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                Favicon(url, null, 22.dp)
+                Text(
+                    UrlInput.display(url),
+                    Modifier.padding(start = 10.dp).widthIn(max = 220.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
 
 /** Tapping the favicon shows what the site may do here, like desktop's site panel. */
 @Composable

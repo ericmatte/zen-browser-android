@@ -123,7 +123,8 @@ The app reuses desktop code or ports it closely:
   search (the Private label sits just above it); otherwise the private
   sidebar lets you pick. Launcher shortcut
   "New private tab". In private mode the link menu has no Glance, and "Open in
-  new private tab" opens it behind the current tab (the sidebar button bumps
+  new private tab" opens it behind the current tab (a card flies into the
+  sidebar button, which bumps
   with a "+1").
 - Pull a page down from its top to reload (only where Gecko allows overscroll,
   like Firefox for Android).

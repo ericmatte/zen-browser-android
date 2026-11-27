@@ -618,8 +618,15 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var backgroundOpens by mutableStateOf(0)
         private set
 
+    var lastBackgroundUrl by mutableStateOf("")
+        private set
+
+    /** Root position of the bar's sidebar button centre, where background tabs fly to. */
+    var sidebarButtonCenter by mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified)
+
     fun newPrivateTabInBackground(target: String) {
         privateTabs += TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
+        lastBackgroundUrl = target
         backgroundOpens++
     }
 
