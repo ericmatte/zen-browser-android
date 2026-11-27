@@ -1,5 +1,9 @@
 package app.zen.android.ui
 
+import androidx.compose.material3.Switch
+
+import android.net.Uri
+
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.graphics.asImageBitmap
@@ -368,7 +372,7 @@ private fun SideBar(vm: BrowserViewModel, color: Color, onEdit: () -> Unit, onSi
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             SidebarButton(vm, onSidebar, recents)
-            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp), vm.loading, vm.reloading)
+            if (vm.hasPage) SiteIdentity(vm.url, vm.secure, Modifier.padding(bottom = 6.dp), vm.loading, vm.reloading, vm::openSiteInfo)
             Box(
                 Modifier
                     .weight(1f)
@@ -445,6 +449,7 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
             showIcon = vm.hasPage,
             loading = vm.loading,
             spinning = vm.reloading,
+            onIcon = vm::openSiteInfo,
             modifier = Modifier.graphicsLayer {
                 translationX = offset
                 alpha = 1f - (kotlin.math.abs(offset) / slot).coerceIn(0f, 1f)
@@ -466,9 +471,9 @@ private fun SwipingIdentity(vm: BrowserViewModel, swipe: PageSwipe, modifier: Mo
 }
 
 @Composable
-private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false, spinning: Boolean = false) {
+private fun Identity(url: String, secure: Boolean, title: String, showIcon: Boolean, modifier: Modifier, loading: Boolean = false, spinning: Boolean = false, onIcon: (() -> Unit)? = null) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 7.dp), loading, spinning)
+        if (showIcon) SiteIdentity(url, secure, Modifier.padding(end = 7.dp), loading, spinning, onIcon)
         TitleLabel(title, Modifier)
     }
 }
@@ -490,10 +495,15 @@ val SecureGreen = Color(0xFF2EB872)
 
 /** The page's favicon with a small lock: green and closed on HTTPS, red and open otherwise. */
 @Composable
-private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false) {
+private fun SiteIdentity(url: String, secure: Boolean, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false, onClick: (() -> Unit)? = null) {
     val web = url.startsWith("http")
     val safe = !web || secure
-    Box(modifier.size(22.dp), contentAlignment = Alignment.Center) {
+    val tap = if (onClick != null && web) {
+        Modifier.pressScale().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Site settings", onClick = onClick)
+    } else {
+        Modifier
+    }
+    Box(modifier.then(tap).size(22.dp), contentAlignment = Alignment.Center) {
         Favicon(url, null, BarIconSize, loading = loading, spinning = spinning)
         if (web) {
             Box(
@@ -586,6 +596,83 @@ class RecentsMenu {
     fun release(): TabItem? {
         open = false
         return items.firstOrNull { it.id == hovered }
+    }
+}
+
+/** Tapping the favicon shows what the site may do here, like desktop's site panel. */
+@Composable
+fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
+    fun close() {
+        vm.siteInfoOpen = false
+    }
+    LaunchedEffect(vm.url) { close() }
+    if (vm.siteInfoOpen) {
+        androidx.activity.compose.BackHandler { close() }
+        Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() })
+    }
+    AnimatedVisibility(
+        vm.siteInfoOpen,
+        modifier = modifier,
+        enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 1000f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeIn(tween(80)),
+        exit = scaleOut(tween(90), targetScale = 0.85f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeOut(tween(90)),
+    ) {
+        val muted = LocalContentColor.current.copy(alpha = 0.6f)
+        Surface(
+            Modifier.width(290.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = if (vm.privateMode) PrivateTint else MaterialTheme.colorScheme.surfaceContainerHigh,
+            contentColor = if (vm.privateMode) Color.White else MaterialTheme.colorScheme.onSurface,
+            shadowElevation = 14.dp,
+        ) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SiteIdentity(vm.url, vm.secure)
+                    Column(Modifier.padding(start = 14.dp)) {
+                        Text(Uri.parse(vm.url).host.orEmpty(), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            if (vm.secure) "Connection secure" else "Connection not secure",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (vm.secure) SecureGreen else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("Permissions", Modifier.padding(horizontal = 18.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = muted)
+                if (vm.sitePermissions.isEmpty()) {
+                    Text("This site asks before using anything.", Modifier.padding(horizontal = 18.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium, color = muted)
+                }
+                vm.sitePermissions.forEach { row ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { vm.setSitePermission(row, !row.allowed) }.padding(horizontal = 18.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(row.label, style = MaterialTheme.typography.bodyLarge)
+                            Text(if (row.allowed) "Allowed" else "Blocked", style = MaterialTheme.typography.bodySmall, color = muted)
+                        }
+                        Switch(row.allowed, { vm.setSitePermission(row, it) })
+                    }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                @Composable
+                fun Action(label: String, icon: String, tint: Color = Color.Unspecified, run: () -> Unit) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            close()
+                            run()
+                        }.padding(horizontal = 18.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(zenIcon(icon), null, Modifier.size(18.dp), tint = if (tint == Color.Unspecified) LocalContentColor.current else tint)
+                        Text(label, Modifier.padding(start = 16.dp), color = tint, style = MaterialTheme.typography.bodyLarge)
+                    }
+                }
+                if (vm.sitePermissions.isNotEmpty()) {
+                    Action("Reset permissions", "reload") { vm.sitePermissions.forEach { vm.setSitePermission(it, null) } }
+                }
+                Action("Clear cookies and site data", "trash", tint = MaterialTheme.colorScheme.error) { vm.clearSiteData() }
+            }
+        }
     }
 }
 

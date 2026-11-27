@@ -68,6 +68,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.mozilla.geckoview.GeckoRuntimeSettings
 import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.StorageController
+import app.zen.android.browser.SitePermissionRow
+import app.zen.android.browser.SitePermissions
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
 import org.mozilla.geckoview.GeckoSession.FinderResult
 import org.mozilla.geckoview.WebResponse
@@ -183,6 +186,10 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var loginSession by mutableStateOf<GeckoSession?>(null)
         private set
     var showSettings by mutableStateOf(false)
+    var siteInfoOpen by mutableStateOf(false)
+    var sitePermissions by mutableStateOf<List<SitePermissionRow>>(emptyList())
+        private set
+    private var storedPermissions = emptyList<GeckoSession.PermissionDelegate.ContentPermission>()
     var message by mutableStateOf<String?>(null)
     var pageTopColor by mutableStateOf<Color?>(null)
     var contextMenu by mutableStateOf<ContextElement?>(null)
@@ -957,6 +964,40 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         storage.getAllPermissions().accept { perms ->
             perms?.forEach { storage.setPermission(it, GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT) }
             message = "Site permissions reset"
+        }
+    }
+
+    fun openSiteInfo() {
+        siteInfoOpen = true
+        loadSitePermissions()
+    }
+
+    private fun loadSitePermissions() {
+        val url = this.url
+        Gecko.runtime(getApplication()).storageController.getPermissions(url, privateMode).accept { list ->
+            if (url != this.url) return@accept
+            storedPermissions = list.orEmpty()
+            sitePermissions = SitePermissions.rows(storedPermissions.map { it.permission to it.value })
+        }
+    }
+
+    fun setSitePermission(row: SitePermissionRow, allowed: Boolean?) {
+        val perm = storedPermissions.firstOrNull { it.permission == row.kind } ?: return
+        val value = when (allowed) {
+            true -> GeckoSession.PermissionDelegate.ContentPermission.VALUE_ALLOW
+            false -> GeckoSession.PermissionDelegate.ContentPermission.VALUE_DENY
+            null -> GeckoSession.PermissionDelegate.ContentPermission.VALUE_PROMPT
+        }
+        Gecko.runtime(getApplication()).storageController.setPermission(perm, value)
+        loadSitePermissions()
+    }
+
+    fun clearSiteData() {
+        val host = Uri.parse(url).host ?: return
+        val flags = StorageController.ClearFlags.COOKIES or StorageController.ClearFlags.SITE_DATA or StorageController.ClearFlags.ALL_CACHES
+        Gecko.runtime(getApplication()).storageController.clearDataFromBaseDomain(host, flags).accept {
+            message = "Cookies and site data cleared"
+            reload()
         }
     }
 
