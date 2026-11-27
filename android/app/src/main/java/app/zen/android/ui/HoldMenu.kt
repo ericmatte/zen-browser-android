@@ -98,6 +98,11 @@ class SlideSelect {
     }
 
     fun take(): (() -> Unit)? = hovered?.let { rows[it]?.second }.also { hovered = null }
+
+    /** A finger that never moved only opened the menu; the row that happens to sit under it is not a choice. */
+    fun forget() {
+        hovered = null
+    }
 }
 
 /** Follows the held finger (root coordinates) until it lifts; returns whether it travelled. */
@@ -120,6 +125,7 @@ suspend fun AwaitPointerEventScope.followHeldFinger(
         if (select.hover(point)) haptics.performHapticFeedback(MenuHoverTick)
         if (!change.pressed) break
     }
+    if (!moved) select.forget()
     return moved
 }
 

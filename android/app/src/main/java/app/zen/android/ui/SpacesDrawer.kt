@@ -389,6 +389,7 @@ class SidebarGestures {
 
     /** Ends the gesture; a still finger leaves the menu open for taps. */
     fun release(): (() -> Unit)? {
+        if (!moved) select.forget()
         val action = select.take()
         if (dragging || action != null || moved || !menuOpen) closeAll()
         return action

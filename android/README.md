@@ -114,8 +114,9 @@ The app reuses desktop code or ports it closely:
 - Search with Google or DuckDuckGo. Tracking protection is one choice
   (Standard or Strict); both also strip tracking parameters from links and
   send Global Privacy Control.
-- Every menu works like iOS: hold, slide onto an entry, release. A plain tap
-  also works. Each entry the finger reaches ticks the vibration motor
+- Every menu works like iOS: hold, slide onto an entry, release. Lifting the
+  finger without moving leaves the menu open, to tap an entry like a normal
+  menu. Each entry the finger reaches ticks the vibration motor
   (Settings → Haptic feedback, on by default).
 - The sidebar opens from the bar's sidebar button; the screen edges keep
   Android's back gesture.
