@@ -75,6 +75,7 @@ import app.zen.android.browser.SitePermissions
 import app.zen.android.browser.CAMERA_KIND
 import app.zen.android.browser.MICROPHONE_KIND
 import app.zen.android.browser.PinnedChange
+import app.zen.android.browser.PrivateMute
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
 import org.mozilla.geckoview.GeckoSession.FinderResult
 import org.mozilla.geckoview.WebResponse
@@ -630,13 +631,24 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         backgroundOpens++
     }
 
+    private val audio get() = getApplication<Application>().getSystemService(android.media.AudioManager::class.java)
+    private var volumeBeforePrivate: Int? = null
+
     fun togglePrivateMode() {
+        val stream = android.media.AudioManager.STREAM_MUSIC
         if (privateMode) {
+            PrivateMute.restoreTo(volumeBeforePrivate, audio.getStreamVolume(stream))?.let { v -> runCatching { audio.setStreamVolume(stream, v, 0) } }
+            volumeBeforePrivate = null
             privateMode = false
             applyThemeMode(settings.state.value.themeMode)
             val back = lastNormalTab ?: space(activeSpace)?.tabs?.firstOrNull()
             if (back != null) selectTab(back) else selectTab(SCRATCH_TAB, home)
         } else {
+            val volume = audio.getStreamVolume(stream)
+            if (PrivateMute.shouldMute(privateTabs.size, volume)) {
+                // Do Not Disturb can forbid volume changes; private mode must still open.
+                if (runCatching { audio.setStreamVolume(stream, 0, android.media.AudioManager.FLAG_SHOW_UI) }.isSuccess) volumeBeforePrivate = volume
+            }
             privateMode = true
             // Private browsing always renders sites dark, which also tells it apart from normal mode at a glance.
             Gecko.setColorScheme(getApplication(), GeckoRuntimeSettings.COLOR_SCHEME_DARK)

@@ -47,11 +47,6 @@ const fullscreenButton = (video) => {
   return null;
 };
 
-const showsVideo = (video) => {
-  const r = video.getBoundingClientRect();
-  return document.fullscreenElement?.contains(video) && r.width > innerWidth / 2 && r.height > 0;
-};
-
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Each fullscreen request is announced: the app only lets it through right after a fresh notice.
@@ -63,9 +58,8 @@ const enterFullscreen = async (video) => {
   if (button) button.click();
   else await playerOf(video).requestFullscreen().catch(() => {});
   await wait(500);
-  if (showsVideo(video)) return;
-  // Still grey or nothing happened: the bare video always draws itself.
-  if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+  // Any fullscreen counts: swapping it for another one is what turned some players grey.
+  if (document.fullscreenElement) return;
   await announce();
   await video.requestFullscreen().catch(() => {});
 };
@@ -78,6 +72,8 @@ screen.orientation.addEventListener("change", async () => {
     await landscapeLayout();
     // Players still resize for a moment after the layout turns; going fullscreen during that shows grey.
     await wait(700);
+    // Many players (YouTube…) go fullscreen on rotation themselves; stepping in then would undo theirs.
+    if (document.fullscreenElement) return;
     if (!video.paused) await enterFullscreen(video);
   } else if (document.fullscreenElement) {
     document.exitFullscreen().catch(() => {});

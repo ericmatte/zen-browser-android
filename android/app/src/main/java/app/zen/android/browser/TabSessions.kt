@@ -106,6 +106,8 @@ object Gecko {
                 on && !ext.metaData.enabled -> controller.enable(ext, WebExtensionController.EnableSource.APP)
                 !on && ext.metaData.enabled -> controller.disable(ext, WebExtensionController.EnableSource.APP)
             }
+            // Installs from before private tabs existed were never allowed there.
+            if (ext != null && on && !ext.metaData.allowedInPrivateBrowsing) controller.setAllowedInPrivateBrowsing(ext, true)
             if (ext != null && on && !adBlockerChecked) {
                 adBlockerChecked = true
                 controller.update(ext)

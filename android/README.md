@@ -78,8 +78,9 @@ The app reuses desktop code or ports it closely:
   itself. The bar steps aside while a page's own text field uses the keyboard.
 - Landscape: the bar rests as a full-height strip on the left edge, painted
   in the page's colour like the status bar. Rotating
-  while a video plays (silent ones too) enters fullscreen, through the
-  player's own fullscreen button when it has one (else the video itself); rotating back
+  while a video plays (silent ones too) enters fullscreen, unless the player
+  already did it itself; the app uses the player's own fullscreen button when
+  it has one (else the video itself); rotating back
   leaves it.
 - A tapped link that an installed app (YouTube, Maps…) claims opens in that
   app. Typed addresses and private tabs stay in Zen. "Open in <app>" in the
@@ -117,6 +118,9 @@ The app reuses desktop code or ports it closely:
   (Settings → Haptic feedback, on by default).
 - The sidebar opens from the bar's sidebar button; the screen edges keep
   Android's back gesture.
+- Entering private mode with no private tab sets the media volume to 0;
+  leaving puts it back (unless you changed it meanwhile). Ad blocking and
+  cookie-banner refusal work in private tabs too.
 - Private tabs: near-black, sidebar on the right (tabs at the bottom, like
   spaces), never synced, no history.
   Google shows its own dark theme. Entering private mode with no tab opens the
