@@ -14,8 +14,8 @@ class Release(val version: String, val pageUrl: String)
  * mostly arrive through GeckoView, so staying current matters.
  */
 object Updates {
-    const val REPO_URL = "https://github.com/ericmatte/zen-browser-desktop"
-    private const val LATEST_API = "https://api.github.com/repos/ericmatte/zen-browser-desktop/releases/latest"
+    const val REPO_URL = "https://github.com/ericmatte/zen-browser-android"
+    private const val LATEST_API = "https://api.github.com/repos/ericmatte/zen-browser-android/releases/latest"
     const val TAG_PREFIX = "android-v"
     const val CHECK_EVERY_MILLIS = 12 * 60 * 60 * 1000L
 

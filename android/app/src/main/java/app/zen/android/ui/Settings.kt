@@ -220,7 +220,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
                     SettingRow("Zen for Android", "Version ${BuildConfig.VERSION_NAME} · GeckoView ${org.mozilla.geckoview.BuildConfig.MOZILLA_VERSION}")
                     ActionRow("Source code") {
                         vm.showSettings = false
-                        vm.newTab("https://github.com/ericmatte/zen-browser-desktop")
+                        vm.newTab("https://github.com/ericmatte/zen-browser-android")
                     }
                 }
                 Spacer(Modifier.height(24.dp))

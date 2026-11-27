@@ -131,5 +131,5 @@ Publish a release (Obtainium and the in-app check read these):
 
 ```sh
 gh release create android-vX.Y.Z ~/Documents/Projects/zen/release/zen-android-X.Y.Z-arm64.apk \
-  --repo ericmatte/zen-browser-desktop --title "Zen Android X.Y.Z" --notes "…"
+  --repo ericmatte/zen-browser-android --title "Zen Android X.Y.Z" --notes "…"
 ```
