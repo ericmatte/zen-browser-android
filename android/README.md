@@ -127,7 +127,10 @@ The APKs are in `app/build/outputs/apk/release/`. Release signing reads
 to the debug key. Every release must use the same key, or Android refuses
 to update the installed app.
 
-Publish a release (Obtainium and the in-app check read these):
+Publish a release (Obtainium and the in-app check read these). Only the
+newest APK is kept in `~/Documents/Projects/zen/release/`; older GitHub
+Releases stay for rollbacks. Each release also takes the newest stable
+GeckoView (see `CLAUDE.md`).
 
 ```sh
 gh release create android-vX.Y.Z ~/Documents/Projects/zen/release/zen-android-X.Y.Z-arm64.apk \
