@@ -1,5 +1,7 @@
 package app.zen.android.ui
 
+import androidx.compose.runtime.remember
+
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.background
@@ -19,10 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -65,10 +64,11 @@ fun PrivateSidebar(vm: BrowserViewModel, onTab: (TabItem) -> Unit, onClose: () -
         )
         // Tabs gather at the bottom, within thumb reach, like the spaces sidebar.
         Box(Modifier.weight(1f).fillMaxWidth().padding(8.dp), contentAlignment = Alignment.BottomCenter) {
+            val reveal = remember { RevealGroup() }
             Column(Modifier.verticalScroll(rememberScrollState(), reverseScrolling = true)) {
                 vm.privateTabs.forEach { tab ->
                     key(tab.id) {
-                        PrivateTabRow(tab, tab.id == vm.activeTab, onClick = { onTab(tab) }, onCloseTab = { vm.closeTab(tab.id) })
+                        PrivateTabRow(tab, tab.id == vm.activeTab, reveal, onClick = { onTab(tab) }, onCloseTab = { vm.closeTab(tab.id) })
                     }
                 }
                 Row(
@@ -98,18 +98,15 @@ fun PrivateSidebar(vm: BrowserViewModel, onTab: (TabItem) -> Unit, onClose: () -
     }
 }
 
+/** Swiping left closes a private tab at once, with the same red trail and trash icon as the spaces sidebar. */
 @Composable
-private fun PrivateTabRow(tab: TabItem, selected: Boolean, onClick: () -> Unit, onCloseTab: () -> Unit) {
-    val state = rememberSwipeToDismissBoxState()
-    SwipeToDismissBox(
-        state = state,
-        enableDismissFromStartToEnd = false,
-        onDismiss = { onCloseTab() },
-        backgroundContent = {
-            if (state.dismissDirection == SwipeToDismissBoxValue.EndToStart) {
-                Box(Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.error.copy(alpha = 0.5f)))
-            }
-        },
+private fun PrivateTabRow(tab: TabItem, selected: Boolean, group: RevealGroup, onClick: () -> Unit, onCloseTab: () -> Unit) {
+    SwipeRow(
+        key = tab.id,
+        group = group,
+        reveal = null,
+        commitStart = null,
+        commitEnd = SwipeAction("trash", "Close tab", DestructiveRed, onCloseTab),
     ) {
         Row(
             Modifier

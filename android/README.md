@@ -125,7 +125,8 @@ The app reuses desktop code or ports it closely:
   leaving puts it back (unless you changed it meanwhile). Ad blocking and
   cookie-banner refusal work in private tabs too.
 - Private tabs: near-black, sidebar on the right (tabs at the bottom, like
-  spaces), never synced, no history.
+  spaces), never synced, no history. Swipe a private tab left to close it at
+  once (red trail and trash icon, like the spaces sidebar).
   Google shows its own dark theme. Entering private mode with no tab opens the
   search (the Private label sits just above it); otherwise the private
   sidebar lets you pick. Launcher shortcut
