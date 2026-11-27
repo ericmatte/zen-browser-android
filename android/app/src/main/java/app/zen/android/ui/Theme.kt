@@ -24,14 +24,9 @@ import app.zen.android.sync.SpaceTheme
 object ZenPalette {
     val coral = Color(0xFFF76F53)
     val brandingDark = Color(0xFF101010)
-    val brandingPaper = Color(0xFFE2E2E2)
     val toolbarDark = Color(23, 23, 26)
     val toolbarLight = Color(240, 240, 244)
-    val iconBackground = Color(0xFF1C1C1C)
-    val iconRings = Color(0xFFF2F0E3)
 }
-
-fun toolbarBase(dark: Boolean) = if (dark) ZenPalette.toolbarDark else ZenPalette.toolbarLight
 
 /**
  * Paints a space's desktop gradient with the geometry of zen-browser-ui.css

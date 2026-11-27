@@ -14,9 +14,6 @@ object DragGap {
     fun slots(index: Int, from: Int, target: Int): Int {
         val real = if (from in 0..index) index + 1 else index
         val wanted = if (index >= target) index + 1 else index
-        return when {
-            from < 0 -> wanted - index
-            else -> wanted - real
-        }
+        return wanted - real
     }
 }

@@ -67,6 +67,8 @@ sealed interface ZenIcon {
 /** The gradient a space uses on desktop (ZenGradientGenerator.getTheme). Colors are ARGB, primary first. */
 data class SpaceTheme(val colors: List<Long>, val opacity: Float, val custom: Boolean = false, val dominant: Long = colors.first()) {
     companion object {
+        private val numbers = Regex("""[\d.]+""")
+
         fun parse(json: JSONObject?): SpaceTheme? {
             val list = json?.optJSONArray("gradientColors") ?: return null
             val raw = (0 until list.length()).mapNotNull { list.optJSONObject(it) }
@@ -103,7 +105,7 @@ data class SpaceTheme(val colors: List<Long>, val opacity: Float, val custom: Bo
                 }
                 return full.toLongOrNull(16)?.let { 0xFF000000L or it }
             }
-            val parts = Regex("""[\d.]+""").findAll(text.substringAfter('(')).map { it.value.toDouble().toInt() }.toList()
+            val parts = numbers.findAll(text.substringAfter('(')).map { it.value.toDouble().toInt() }.toList()
             return if (text.startsWith("rgb") && parts.size >= 3) rgb(parts[0], parts[1], parts[2]) else null
         }
     }

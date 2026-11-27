@@ -74,41 +74,32 @@ fun DownloadsSection(vm: BrowserViewModel, menu: HoldMenuState, modifier: Modifi
 private fun DownloadRow(item: DownloadItem, modifier: Modifier, onOpen: () -> Unit) {
     val onSurface = MaterialTheme.colorScheme.onSurface
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    ListRow(modifier, onOpen, leading = {
         Box(Modifier.size(22.dp), contentAlignment = Alignment.Center) {
             Icon(zenIcon("downloads"), null, Modifier.size(20.dp), tint = if (item.status == DownloadStatus.FAILED) MaterialTheme.colorScheme.error else onSurface)
         }
-        Column(Modifier.padding(start = 16.dp).weight(1f)) {
-            Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, fontWeight = FontWeight.Medium)
-            when (item.status) {
-                DownloadStatus.RUNNING -> {
-                    val progress = item.progress
-                    if (progress != null) {
-                        LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp).clip(RoundedCornerShape(2.dp)))
-                    } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp).clip(RoundedCornerShape(2.dp)))
-                    }
-                    Text(
-                        Downloads.size(item.received) + (if (item.total > 0) " of " + Downloads.size(item.total) else ""),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = muted,
-                    )
+    }) {
+        Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, color = onSurface, fontWeight = FontWeight.Medium)
+        when (item.status) {
+            DownloadStatus.RUNNING -> {
+                val progress = item.progress
+                if (progress != null) {
+                    LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp).clip(RoundedCornerShape(2.dp)))
+                } else {
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp).clip(RoundedCornerShape(2.dp)))
                 }
-                DownloadStatus.DONE -> Text(
-                    Downloads.size(item.total) + " · " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.time)),
+                Text(
+                    Downloads.size(item.received) + (if (item.total > 0) " of " + Downloads.size(item.total) else ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = muted,
                 )
-                DownloadStatus.FAILED -> Text("Failed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
+            DownloadStatus.DONE -> Text(
+                Downloads.size(item.total) + " · " + DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.time)),
+                style = MaterialTheme.typography.bodySmall,
+                color = muted,
+            )
+            DownloadStatus.FAILED -> Text("Failed", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
     }
 }

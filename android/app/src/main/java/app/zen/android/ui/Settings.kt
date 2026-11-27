@@ -255,7 +255,7 @@ private fun SettingRow(title: String, subtitle: String?) {
     }
 }
 
-private fun openLink(context: Context, link: String): Boolean = try {
+internal fun openLink(context: Context, link: String): Boolean = try {
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     true
 } catch (_: ActivityNotFoundException) {

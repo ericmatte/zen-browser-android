@@ -102,7 +102,7 @@ fun WelcomeScreen(vm: BrowserViewModel, dark: Boolean) {
                     action = if (Updates.obtainiumInstalled(context)) "Add to Obtainium" else "Get Obtainium",
                     text = text,
                 ) {
-                    if (!openUri(context, Updates.OBTAINIUM_ADD)) openUri(context, Updates.OBTAINIUM_DOWNLOAD)
+                    if (!openLink(context, Updates.OBTAINIUM_ADD)) openLink(context, Updates.OBTAINIUM_DOWNLOAD)
                 }
             }
             Spacer(Modifier.weight(1f))
@@ -161,11 +161,4 @@ private fun WelcomeStep(
             )
         }
     }
-}
-
-private fun openUri(context: android.content.Context, uri: String): Boolean = try {
-    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-    true
-} catch (_: android.content.ActivityNotFoundException) {
-    false
 }

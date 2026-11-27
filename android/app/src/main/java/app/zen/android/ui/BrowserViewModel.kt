@@ -21,7 +21,6 @@ import app.zen.android.browser.Release
 import app.zen.android.browser.Updates
 import app.zen.android.browser.SuggestionSwap
 import android.app.Application
-import android.content.Context
 import android.net.Uri
 import android.webkit.URLUtil
 import androidx.compose.runtime.getValue
@@ -522,15 +521,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
         launcherOpen = false
     }
-    fun hasNeighbor(step: Int): Boolean {
-        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return false
-        val index = tabs.indexOfFirst { it.id == activeTab }
-        return index >= 0 && tabs.getOrNull(index + step) != null
-    }
+    private fun visibleTabs(): List<TabItem>? = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs
+
+    fun hasNeighbor(step: Int): Boolean = neighbor(step) != null
 
     /** The tab a swipe of [step] would land on, with its live title and address. */
     fun neighbor(step: Int): TabItem? {
-        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return null
+        val tabs = visibleTabs() ?: return null
         val index = tabs.indexOfFirst { it.id == activeTab }
         if (index < 0) return null
         return tabs.getOrNull(index + step)?.let { it.copy(title = titles[it.id] ?: it.title, url = urls[it.id] ?: it.url) }
@@ -538,7 +535,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     /** Swiping the address bar walks the visible tab list in sidebar order. */
     fun switchTab(step: Int): Boolean {
-        val tabs = if (privateMode) privateTabs.toList() else space(activeSpace)?.tabs ?: return false
+        val tabs = visibleTabs() ?: return false
         val index = tabs.indexOfFirst { it.id == activeTab }
         val target = tabs.getOrNull(if (index < 0) 0 else index + step) ?: return false
         selectTab(target)
@@ -1177,7 +1174,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         putDownload(start)
         message = "Downloading $name"
         // A link that opens straight onto a file leaves an empty tab behind; desktop closes it, and so do we.
-        if (backHistory[tabId] != true && (urls[tabId] ?: "").let { it.isEmpty() || it == response.uri || UrlInput.isPlaceholder(it) }) closeTab(tabId)
+        if (backHistory[tabId] != true && (urls[tabId] ?: "").let { it == response.uri || UrlInput.isPlaceholder(it) }) closeTab(tabId)
         viewModelScope.launch {
             val resolver = app.contentResolver
             val done = withContext(Dispatchers.IO) {

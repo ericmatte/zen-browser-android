@@ -39,7 +39,7 @@ class History(private val file: File?, private val limit: Int = 2000) {
 
     @Synchronized
     fun search(query: String, max: Int = 5, now: Long = System.currentTimeMillis()): List<Visit> {
-        val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = query.trim().lowercase().split(whitespace).filter { it.isNotEmpty() }
         if (words.isEmpty()) return emptyList()
         return entries.values
             .filter { v -> words.all { w -> v.title.lowercase().contains(w) || v.url.lowercase().contains(w) } }
@@ -50,7 +50,7 @@ class History(private val file: File?, private val limit: Int = 2000) {
     /** Library listing: optional text and time filter, then the chosen sort. */
     @Synchronized
     fun browse(query: String, since: Long?, sort: HistorySort): List<Visit> {
-        val words = query.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = query.trim().lowercase().split(whitespace).filter { it.isNotEmpty() }
         val matches = entries.values.filter { v ->
             (since == null || v.lastVisit >= since) &&
                 words.all { w -> v.title.lowercase().contains(w) || v.url.lowercase().contains(w) }
@@ -93,5 +93,9 @@ class History(private val file: File?, private val limit: Int = 2000) {
         val recency = 1.0 / (1.0 + days / 30.0)
         val hostMatch = UrlInput.display(v.url).lowercase().startsWith(first)
         return v.visits * recency + if (hostMatch) 100.0 else 0.0
+    }
+
+    private companion object {
+        val whitespace = Regex("\\s+")
     }
 }

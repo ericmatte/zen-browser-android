@@ -393,7 +393,6 @@ class DrawerController(private val scope: CoroutineScope) {
 
     suspend fun snapClosed() = fraction.snapTo(0f)
 
-    suspend fun closeAndWait() = fraction.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 500f))
 
     private fun animateTo(target: Float, velocity: Float = 0f) {
         scope.launch { fraction.animateTo(target, spring(dampingRatio = 0.9f, stiffness = 500f), initialVelocity = velocity) }

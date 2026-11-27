@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -249,6 +250,20 @@ private fun FilterButton(
 
 @Composable
 private fun VisitRow(visit: Visit, modifier: Modifier, onOpen: () -> Unit) {
+    ListRow(modifier, onOpen, leading = { Favicon(visit.url, null, 22.dp) }) {
+        Text(visit.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+        Text(
+            visit.url.removePrefix("https://").removePrefix("http://").removePrefix("www."),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+internal fun ListRow(modifier: Modifier, onOpen: () -> Unit, leading: @Composable () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Row(
         modifier
             .fillMaxWidth()
@@ -258,16 +273,7 @@ private fun VisitRow(visit: Visit, modifier: Modifier, onOpen: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Favicon(visit.url, null, 22.dp)
-        Column(Modifier.padding(start = 16.dp)) {
-            Text(visit.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-            Text(
-                visit.url.removePrefix("https://").removePrefix("http://").removePrefix("www."),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        leading()
+        Column(Modifier.padding(start = 16.dp).weight(1f), content = content)
     }
 }
