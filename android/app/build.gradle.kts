@@ -20,8 +20,8 @@ android {
         applicationId = "app.zen.android"
         minSdk = 29
         targetSdk = 35
-        versionCode = 37
-        versionName = "0.7.15"
+        versionCode = 38
+        versionName = "0.7.16"
     }
 
     signingConfigs {

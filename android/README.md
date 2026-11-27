@@ -118,7 +118,8 @@ The app reuses desktop code or ports it closely:
   (Settings → Haptic feedback, on by default).
 - The sidebar opens from the bar's sidebar button; the screen edges keep
   Android's back gesture.
-- Entering private mode with no private tab sets the media volume to 0;
+- The first private page of a session (a search or a link) sets the media
+  volume to 0;
   leaving puts it back (unless you changed it meanwhile). Ad blocking and
   cookie-banner refusal work in private tabs too.
 - Private tabs: near-black, sidebar on the right (tabs at the bottom, like

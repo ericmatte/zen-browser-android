@@ -591,8 +591,11 @@ private fun SidebarButton(vm: BrowserViewModel, onSidebar: () -> Unit, recents: 
     ) {
         val bump = remember { Animatable(1f) }
         val rise = remember { Animatable(1f) }
+        // Starts at the current count, so a rotation (which rebuilds the screen) never replays it.
+        var seen by remember { mutableIntStateOf(vm.backgroundOpens) }
         LaunchedEffect(vm.backgroundOpens) {
-            if (vm.backgroundOpens == 0) return@LaunchedEffect
+            if (vm.backgroundOpens == seen) return@LaunchedEffect
+            seen = vm.backgroundOpens
             haptics.performHapticFeedback(HapticFeedbackType.Confirm)
             // Lands when the flying tab reaches the button.
             delay(BackgroundFlightMillis.toLong())
@@ -668,8 +671,10 @@ const val BackgroundFlightMillis = 700
 fun BackgroundTabFlight(vm: BrowserViewModel) {
     val progress = remember { Animatable(1f) }
     var url by remember { mutableStateOf("") }
+    var seen by remember { mutableIntStateOf(vm.backgroundOpens) }
     LaunchedEffect(vm.backgroundOpens) {
-        if (vm.backgroundOpens == 0) return@LaunchedEffect
+        if (vm.backgroundOpens == seen) return@LaunchedEffect
+        seen = vm.backgroundOpens
         url = vm.lastBackgroundUrl
         progress.snapTo(0f)
         progress.animateTo(1f, tween(BackgroundFlightMillis, easing = FastOutSlowInEasing))

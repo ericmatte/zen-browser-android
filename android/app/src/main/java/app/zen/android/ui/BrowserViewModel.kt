@@ -611,7 +611,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun newPrivateTab(target: String = home) {
         if (!privateMode) togglePrivateMode()
         val tab = TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
-        privateTabs += tab
+        addPrivateTab(tab)
         selectTab(tab)
     }
 
@@ -626,13 +626,24 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var sidebarButtonCenter by mutableStateOf(androidx.compose.ui.geometry.Offset.Unspecified)
 
     fun newPrivateTabInBackground(target: String) {
-        privateTabs += TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false)
+        addPrivateTab(TabItem(PRIVATE_PREFIX + UUID.randomUUID(), target, UrlInput.display(target), false))
         lastBackgroundUrl = target
         backgroundOpens++
     }
 
     private val audio get() = getApplication<Application>().getSystemService(android.media.AudioManager::class.java)
     private var volumeBeforePrivate: Int? = null
+
+    /** The first private page of a session is what gets muted, not merely opening private mode. */
+    private fun addPrivateTab(tab: TabItem) {
+        val stream = android.media.AudioManager.STREAM_MUSIC
+        val volume = audio.getStreamVolume(stream)
+        if (volumeBeforePrivate == null && PrivateMute.shouldMute(privateTabs.size, volume)) {
+            // Do Not Disturb can forbid volume changes; the tab must still open.
+            if (runCatching { audio.setStreamVolume(stream, 0, android.media.AudioManager.FLAG_SHOW_UI) }.isSuccess) volumeBeforePrivate = volume
+        }
+        privateTabs += tab
+    }
 
     fun togglePrivateMode() {
         val stream = android.media.AudioManager.STREAM_MUSIC
@@ -644,11 +655,6 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             val back = lastNormalTab ?: space(activeSpace)?.tabs?.firstOrNull()
             if (back != null) selectTab(back) else selectTab(SCRATCH_TAB, home)
         } else {
-            val volume = audio.getStreamVolume(stream)
-            if (PrivateMute.shouldMute(privateTabs.size, volume)) {
-                // Do Not Disturb can forbid volume changes; private mode must still open.
-                if (runCatching { audio.setStreamVolume(stream, 0, android.media.AudioManager.FLAG_SHOW_UI) }.isSuccess) volumeBeforePrivate = volume
-            }
             privateMode = true
             // Private browsing always renders sites dark, which also tells it apart from normal mode at a glance.
             Gecko.setColorScheme(getApplication(), GeckoRuntimeSettings.COLOR_SCHEME_DARK)
