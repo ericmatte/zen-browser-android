@@ -1,5 +1,7 @@
 package app.zen.android.ui
 
+import androidx.compose.foundation.layout.fillMaxHeight
+
 import app.zen.android.browser.UrlInput
 import androidx.compose.ui.composed
 import androidx.compose.foundation.layout.heightIn
@@ -948,7 +950,7 @@ private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, dept
         commitEnd = if (tab.pinned) SwipeAction("unpin", "Unpin", accent) { vm.setPinned(tab, false, spaceUuid) } else null,
         modifier = Modifier.onGloballyPositioned { gestures.hitRects[tab.id] = it.boundsInRoot() to HeldTab(tab, spaceUuid, it.boundsInRoot()) },
     ) {
-        TabRow(tab, depth, tab.id == vm.activeTab) {
+        TabRow(tab, depth, tab.id == vm.activeTab, detour = vm.pinnedDetour(tab), onReset = { vm.resetPinnedTab(tab) }) {
             vm.selectTab(tab)
             onOpen()
         }
@@ -956,7 +958,7 @@ private fun SwipeTab(vm: BrowserViewModel, tab: TabItem, spaceUuid: String, dept
 }
 
 @Composable
-private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, onClick: () -> Unit) {
+private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, detour: TabItem? = null, onReset: () -> Unit = {}, onClick: () -> Unit) {
     val background = if (selected) selectedTabBackground() else Color.Transparent
     Row(
         Modifier
@@ -968,9 +970,21 @@ private fun TabRow(tab: TabItem, depth: Int, selected: Boolean, onClick: () -> U
             .padding(start = (10 + depth * 14).dp, end = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Favicon(tab.url, tab.icon, SidebarIconSize)
+        // Like desktop: the pinned icon, a slash, then the page shown now; tapping left of the slash goes back to the pin.
+        if (detour != null) {
+            Box(
+                Modifier.fillMaxHeight().clickable(onClickLabel = "Back to pinned page", onClick = onReset),
+                contentAlignment = Alignment.Center,
+            ) { Favicon(tab.url, tab.icon, SidebarIconSize) }
+            Box(
+                Modifier.padding(horizontal = 7.dp).size(2.dp, 14.dp).rotate(15f).clip(RoundedCornerShape(1.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)),
+            )
+        }
+        val shown = detour ?: tab
+        Favicon(shown.url, shown.icon, SidebarIconSize)
         Text(
-            tab.title.ifBlank { UrlInput.display(tab.url) },
+            shown.title.ifBlank { UrlInput.display(shown.url) },
             Modifier.padding(start = SidebarIconGap),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

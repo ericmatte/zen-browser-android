@@ -26,6 +26,7 @@ import android.webkit.URLUtil
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -71,6 +72,7 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.StorageController
 import app.zen.android.browser.SitePermissionRow
 import app.zen.android.browser.SitePermissions
+import app.zen.android.browser.PinnedChange
 import org.mozilla.geckoview.GeckoSession.ContentDelegate.ContextElement
 import org.mozilla.geckoview.GeckoSession.FinderResult
 import org.mozilla.geckoview.WebResponse
@@ -238,8 +240,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     var captureRequest by mutableIntStateOf(0)
         private set
 
-    private val titles = mutableMapOf<String, String>()
-    private val urls = mutableMapOf<String, String>()
+    private val titles = mutableStateMapOf<String, String>()
+    private val urls = mutableStateMapOf<String, String>()
     private val backHistory = mutableMapOf<String, Boolean>()
     private val forwardHistory = mutableMapOf<String, Boolean>()
     private var lastScrollY = 0
@@ -967,6 +969,22 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         }
     }
 
+    /** What a pinned tab shows now, when it has browsed away from its pinned address. */
+    fun pinnedDetour(tab: TabItem): TabItem? {
+        if (!tab.pinned || !PinnedChange.changed(tab.url, urls[tab.id])) return null
+        return tab.copy(url = urls.getValue(tab.id), title = titles[tab.id] ?: UrlInput.display(urls.getValue(tab.id)), icon = null)
+    }
+
+    fun resetPinnedTab(tab: TabItem) {
+        urls[tab.id] = tab.url
+        titles[tab.id] = tab.title
+        sessions.peek(tab.id)?.loadUri(tab.url)
+        if (tab.id == activeTab) {
+            url = tab.url
+            title = tab.title
+        }
+    }
+
     fun openSiteInfo() {
         siteInfoOpen = true
         loadSitePermissions()
@@ -1101,6 +1119,8 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             return
         }
         val synced = repository.view.value.tab(tabId) ?: return
+        // Desktop freezes a pinned tab's address at pin time; browsing inside it must not move the pin.
+        if (synced.pinned) return
         val title = titles[tabId] ?: synced.title
         if (synced.url == u && synced.title == title) return
         viewModelScope.launch { repository.edit(LocalEdit.UpdateTab(tabId, u, title)) }
