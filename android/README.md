@@ -54,7 +54,8 @@ The app reuses desktop code or ports it closely:
 - Tap the address bar's favicon for the site's panel: connection, the
   permissions it was given (switch or reset them) and "Clear cookies and site
   data". A site asking for location, notifications… asks in that same panel,
-  above the bar, without blocking the page; the answer is remembered.
+  above the bar, without blocking the page; the answer (camera and
+  microphone too) is remembered for the site.
 - A pinned tab keeps the address it was pinned with, like desktop: browsing
   inside it is never synced. Its sidebar row then shows the pinned icon, a
   slash, and the page shown now; tap left of the slash to go back.
