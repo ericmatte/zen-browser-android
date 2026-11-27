@@ -40,6 +40,7 @@ interface TabEvents {
     fun onMediaPlaying(tabId: String, playing: Boolean) {}
     /** The phone turned sideways while this tab plays a video, even a silent one MediaSession ignores. */
     fun onVideoRotated(tabId: String) {}
+    fun onSiteUsage(tabId: String, bytes: Long) {}
     /** Returns true when the navigation was consumed (e.g. the FxA OAuth redirect). */
     fun interceptNavigation(tabId: String, url: String): Boolean = false
 }
@@ -426,6 +427,7 @@ class TabSessions(
                     val json = message as? org.json.JSONObject
                     when (json?.optString("type")) {
                         "videoRotated" -> events.onVideoRotated(tabId)
+                        "siteUsage" -> events.onSiteUsage(tabId, json.optLong("bytes"))
                         // Answers travel as plain values: GeckoView cannot pass a JSONObject back to the page.
                         "cookieBanners" -> return GeckoResult.fromValue(Gecko.rejectCookieBanners)
                     }

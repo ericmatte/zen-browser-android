@@ -1021,8 +1021,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     fun clearSiteData() {
         val host = Uri.parse(url).host ?: return
         val flags = StorageController.ClearFlags.COOKIES or StorageController.ClearFlags.SITE_DATA or StorageController.ClearFlags.ALL_CACHES
+        val tabId = activeTab
         Gecko.runtime(getApplication()).storageController.clearDataFromBaseDomain(host, flags).accept {
-            message = "Cookies and site data cleared"
+            siteUsage[tabId] = 0
             reload()
         }
     }
@@ -1194,6 +1195,13 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     }
 
     private val videoRotated = mutableMapOf<String, Long>()
+
+    private val siteUsage = mutableStateMapOf<String, Long>()
+    val siteBytes: Long? get() = siteUsage[activeTab]
+
+    override fun onSiteUsage(tabId: String, bytes: Long) {
+        siteUsage[tabId] = bytes
+    }
 
     override fun onVideoRotated(tabId: String) {
         videoRotated[tabId] = System.currentTimeMillis()

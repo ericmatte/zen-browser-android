@@ -1,6 +1,7 @@
 package app.zen.android.ui
 
 import app.zen.android.browser.PageRequest
+import app.zen.android.browser.SiteUsage
 
 import androidx.compose.material3.OutlinedButton
 
@@ -676,22 +677,32 @@ fun SitePopover(vm: BrowserViewModel, landscape: Boolean, modifier: Modifier) {
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
-                fun Action(label: String, icon: String, tint: Color = Color.Unspecified, run: () -> Unit) {
+                fun Action(label: String, icon: String, tint: Color = Color.Unspecified, subtitle: String? = null, closes: Boolean = true, run: () -> Unit) {
                     Row(
                         Modifier.fillMaxWidth().clickable {
-                            close()
+                            if (closes) close()
                             run()
                         }.padding(horizontal = 18.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(zenIcon(icon), null, Modifier.size(18.dp), tint = if (tint == Color.Unspecified) LocalContentColor.current else tint)
-                        Text(label, Modifier.padding(start = 16.dp), color = tint, style = MaterialTheme.typography.bodyLarge)
+                        Column(Modifier.padding(start = 16.dp)) {
+                            Text(label, color = tint, style = MaterialTheme.typography.bodyLarge)
+                            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = muted)
+                        }
                     }
                 }
                 if (vm.sitePermissions.isNotEmpty()) {
                     Action("Reset permissions", "reload") { vm.sitePermissions.forEach { vm.setSitePermission(it, null) } }
                 }
-                Action("Clear cookies and site data", "trash", tint = MaterialTheme.colorScheme.error) { vm.clearSiteData() }
+                // Stays open so the size can be seen dropping.
+                Action(
+                    "Clear cookies and site data",
+                    "trash",
+                    tint = MaterialTheme.colorScheme.error,
+                    subtitle = vm.siteBytes?.let { "Uses ${SiteUsage.label(it)}" },
+                    closes = false,
+                ) { vm.clearSiteData() }
             }
         }
     }

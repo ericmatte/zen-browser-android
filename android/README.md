@@ -53,7 +53,7 @@ The app reuses desktop code or ports it closely:
   gap where the item will land.
 - Tap the address bar's favicon for the site's panel: connection, the
   permissions it was given (switch or reset them) and "Clear cookies and site
-  data". A site asking for location, notifications… asks in that same panel,
+  data", which shows the space the site uses and updates once cleared. A site asking for location, notifications… asks in that same panel,
   above the bar, without blocking the page; the answer (camera and
   microphone too) is remembered for the site.
 - A pinned tab keeps the address it was pinned with, like desktop: browsing
