@@ -73,6 +73,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -735,6 +736,8 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
         )
     }
     val highlight = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+    val defaultBrowser = rememberDefaultBrowser()
+    LaunchedEffect(menu.open) { if (menu.open) defaultBrowser.refresh() }
     var nativeApp by remember { mutableStateOf<NativeApp?>(null) }
     LaunchedEffect(menu.open, vm.url) {
         if (menu.open) nativeApp = withContext(Dispatchers.Default) { if (vm.hasPage) AppLinks.find(context, vm.url) else null }
@@ -785,7 +788,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 @Composable
-                fun Item(label: String, icon: String, leading: (@Composable () -> Unit)? = null, badge: Boolean = false, action: () -> Unit) {
+                fun Item(label: String, icon: String, leading: (@Composable () -> Unit)? = null, tint: Color = Color.Unspecified, action: () -> Unit) {
                     val run = {
                         close()
                         action()
@@ -799,11 +802,15 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                             .padding(horizontal = 18.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (leading != null) Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { leading() } else Icon(zenIcon(icon), null, Modifier.size(18.dp))
-                        Text(label, Modifier.padding(start = 16.dp), style = MaterialTheme.typography.bodyLarge)
-                        if (badge) UpdateDot(Modifier.padding(start = 8.dp))
+                        val iconTint = if (tint == Color.Unspecified) LocalContentColor.current else tint
+                        if (leading != null) Box(Modifier.size(18.dp), contentAlignment = Alignment.Center) { leading() } else Icon(zenIcon(icon), null, Modifier.size(18.dp), tint = iconTint)
+                        Text(label, Modifier.padding(start = 16.dp), color = tint, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
+                vm.update?.let { update ->
+                    Item("Update to ${update.version}", "downloads", tint = UpdateOrange) { installUpdate(context, vm, update) }
+                }
+                if (!defaultBrowser.isDefault) Item("Set as default browser", "open") { defaultBrowser.ask() }
                 nativeApp?.let { app ->
                     Item("Open in ${app.label}", "", leading = { AppIcon(app) }) {
                         if (!AppLinks.open(context, vm.url, app)) vm.message = "${app.label} could not open this page"
@@ -816,7 +823,7 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                     vm.showLibrary = true
                 }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
-                Item("Settings", "settings", badge = vm.update != null) { vm.showSettings = true }
+                Item("Settings", "settings") { vm.showSettings = true }
             }
         }
     }

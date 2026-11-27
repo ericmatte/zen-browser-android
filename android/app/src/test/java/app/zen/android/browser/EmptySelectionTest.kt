@@ -56,4 +56,24 @@ class EmptySelectionTest {
     fun `launch with no temporary tab opens the home search`() {
         assertEquals(null, EmptySelection.atLaunch(recent = listOf("pinned"), temporary = emptyList()))
     }
+
+    @Test
+    fun `returning to the app after leaving it from the back search reopens the last temporary tab`() {
+        assertEquals("t2", EmptySelection.onReturn(searchFromBack = true, privateMode = false, recent = listOf("t2", "t1"), temporary = listOf("t1", "t2")))
+    }
+
+    @Test
+    fun `returning to the app keeps a search the user opened`() {
+        assertEquals(null, EmptySelection.onReturn(searchFromBack = false, privateMode = false, recent = listOf("t2"), temporary = listOf("t2")))
+    }
+
+    @Test
+    fun `returning to the app keeps the back search when no temporary tab is left`() {
+        assertEquals(null, EmptySelection.onReturn(searchFromBack = true, privateMode = false, recent = listOf("pinned"), temporary = emptyList()))
+    }
+
+    @Test
+    fun `returning to the app in private mode keeps the back search`() {
+        assertEquals(null, EmptySelection.onReturn(searchFromBack = true, privateMode = true, recent = listOf("t2"), temporary = listOf("t2")))
+    }
 }

@@ -122,8 +122,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     LaunchedEffect(vm.showLibrary) { if (vm.showLibrary && !drawer.isOpen) drawer.open() }
     val library by animateFloatAsState(if (vm.showLibrary) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 380f), label = "library")
     val essentials by vm.essentials.collectAsStateWithLifecycle()
-    // Private tabs always use the side opposite to spaces (desktop's zen.tabs.vertical.right-side picks the spaces side).
-    val drawerOnRight = vm.privateMode != prefs.sidebarRight
+    val drawerOnRight = vm.privateMode
     LaunchedEffect(drawerOnRight) { if (!drawer.isOpen) drawer.snapSide(drawerOnRight) }
 
     // Only claim "back" when the page has history, so Android 14's predictive back-to-home still plays otherwise.
@@ -151,9 +150,9 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
         if (search) {
             vm.openLauncher()
             drawer.snapClosed()
-            drawer.snapSide(!prefs.sidebarRight)
+            drawer.snapSide(right = true)
         } else {
-            drawer.moveTo(right = !prefs.sidebarRight)
+            drawer.moveTo(right = true)
         }
     }
 
@@ -164,7 +163,7 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
 
     fun leavePrivate() = scope.launch {
         vm.togglePrivateMode()
-        drawer.moveTo(right = prefs.sidebarRight)
+        drawer.moveTo(right = false)
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(statusColor)) {

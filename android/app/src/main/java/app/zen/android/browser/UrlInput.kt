@@ -5,11 +5,7 @@ import java.net.URLEncoder
 
 enum class SearchEngine(val label: String, val home: String, private val query: String) {
     GOOGLE("Google", "https://www.google.com/", "https://www.google.com/search?q="),
-    DUCKDUCKGO("DuckDuckGo", "https://duckduckgo.com/", "https://duckduckgo.com/?q="),
-    BING("Bing", "https://www.bing.com/", "https://www.bing.com/search?q="),
-    BRAVE("Brave Search", "https://search.brave.com/", "https://search.brave.com/search?q="),
-    ECOSIA("Ecosia", "https://www.ecosia.org/", "https://www.ecosia.org/search?q="),
-    STARTPAGE("Startpage", "https://www.startpage.com/", "https://www.startpage.com/do/search?q=");
+    DUCKDUCKGO("DuckDuckGo", "https://duckduckgo.com/", "https://duckduckgo.com/?q=");
 
     fun search(text: String) = query + URLEncoder.encode(text, "UTF-8")
 

@@ -177,10 +177,10 @@ object Gecko {
             setEnhancedTrackingProtectionLevel(if (strict) ContentBlocking.EtpLevel.STRICT else ContentBlocking.EtpLevel.DEFAULT)
             setAntiTracking(if (strict) ContentBlocking.AntiTracking.STRICT else ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
             setStrictSocialTrackingProtection(strict)
-            setQueryParameterStrippingEnabled(prefs.stripTrackingParams)
+            setQueryParameterStrippingEnabled(true)
             setQueryParameterStrippingPrivateBrowsingEnabled(true)
         }
-        r.settings.setGlobalPrivacyControl(prefs.globalPrivacyControl)
+        r.settings.setGlobalPrivacyControl(true)
         rejectCookieBanners = prefs.rejectCookieBanners
         r.settings.setAllowInsecureConnections(
             when (prefs.httpsOnly) {

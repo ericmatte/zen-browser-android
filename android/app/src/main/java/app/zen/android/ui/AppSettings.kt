@@ -13,7 +13,7 @@ import org.json.JSONObject
 enum class ThemeMode(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
 
 enum class TrackingProtection(val label: String, val detail: String) {
-    STANDARD("Standard", "Blocks trackers and cross-site cookies, pages load normally"),
+    STANDARD("Standard", "Blocks trackers, cross-site cookies and tracking parameters in links, and tells sites not to sell your data"),
     STRICT("Strict", "Also blocks fingerprinters and tracking content; some sites may break"),
 }
 
@@ -46,16 +46,13 @@ data class Preferences(
     val openTabsInSuggestions: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val tintStatusBar: Boolean = true,
-    val sidebarRight: Boolean = false,
     val textScale: Float = 1f,
     val forceZoom: Boolean = false,
     val tracking: TrackingProtection = TrackingProtection.STANDARD,
-    val globalPrivacyControl: Boolean = false,
     val adBlocking: Boolean = true,
     val rejectCookieBanners: Boolean = true,
     val httpsOnly: HttpsOnly = HttpsOnly.PRIVATE,
     val dns: DnsOverHttps = DnsOverHttps.OFF,
-    val stripTrackingParams: Boolean = true,
     val rememberHistory: Boolean = true,
     val autoplay: Autoplay = Autoplay.BLOCK_AUDIBLE,
     val location: SitePermission = SitePermission.ASK,
@@ -63,10 +60,7 @@ data class Preferences(
     val microphone: SitePermission = SitePermission.ASK,
     val notifications: SitePermission = SitePermission.ASK,
     val tabCleanup: TabCleanup = TabCleanup.HALF_DAY,
-    val selectRecentOnClose: Boolean = true,
     val haptics: Boolean = true,
-    val checkUpdates: Boolean = true,
-    val glance: Boolean = true,
     val expandedFolders: Set<String> = emptySet(),
     val collapsedSpaces: Set<String> = emptySet(),
 )
@@ -122,16 +116,13 @@ class AppSettings(context: Context) {
         putBoolean("openTabsInSuggestions", p.openTabsInSuggestions)
         putString("themeMode", p.themeMode.name)
         putBoolean("tintStatusBar", p.tintStatusBar)
-        putBoolean("sidebarRight", p.sidebarRight)
         putFloat("textScale", p.textScale)
         putBoolean("forceZoom", p.forceZoom)
         putString("tracking", p.tracking.name)
-        putBoolean("globalPrivacyControl", p.globalPrivacyControl)
         putBoolean("adBlocking", p.adBlocking)
         putBoolean("rejectCookieBanners", p.rejectCookieBanners)
         putString("httpsOnly", p.httpsOnly.name)
         putString("dns", p.dns.name)
-        putBoolean("stripTrackingParams", p.stripTrackingParams)
         putBoolean("rememberHistory", p.rememberHistory)
         putString("autoplay", p.autoplay.name)
         putString("location", p.location.name)
@@ -139,10 +130,7 @@ class AppSettings(context: Context) {
         putString("microphone", p.microphone.name)
         putString("notifications", p.notifications.name)
         putString("tabCleanup", p.tabCleanup.name)
-        putBoolean("selectRecentOnClose", p.selectRecentOnClose)
         putBoolean("haptics", p.haptics)
-        putBoolean("checkUpdates", p.checkUpdates)
-        putBoolean("glance", p.glance)
         putStringSet("expandedFolders", p.expandedFolders)
         putStringSet("collapsedSpaces", p.collapsedSpaces)
     }
@@ -157,16 +145,13 @@ class AppSettings(context: Context) {
             openTabsInSuggestions = prefs.getBoolean("openTabsInSuggestions", d.openTabsInSuggestions),
             themeMode = enumOr(prefs.getString("themeMode", null), d.themeMode),
             tintStatusBar = prefs.getBoolean("tintStatusBar", d.tintStatusBar),
-            sidebarRight = prefs.getBoolean("sidebarRight", d.sidebarRight),
             textScale = prefs.getFloat("textScale", d.textScale),
             forceZoom = prefs.getBoolean("forceZoom", d.forceZoom),
             tracking = enumOr(prefs.getString("tracking", null), d.tracking),
-            globalPrivacyControl = prefs.getBoolean("globalPrivacyControl", d.globalPrivacyControl),
             adBlocking = prefs.getBoolean("adBlocking", d.adBlocking),
             rejectCookieBanners = prefs.getBoolean("rejectCookieBanners", d.rejectCookieBanners),
             httpsOnly = enumOr(prefs.getString("httpsOnly", null), d.httpsOnly),
             dns = enumOr(prefs.getString("dns", null), d.dns),
-            stripTrackingParams = prefs.getBoolean("stripTrackingParams", d.stripTrackingParams),
             rememberHistory = prefs.getBoolean("rememberHistory", d.rememberHistory),
             autoplay = enumOr(prefs.getString("autoplay", null), d.autoplay),
             location = enumOr(prefs.getString("location", null), d.location),
@@ -174,10 +159,7 @@ class AppSettings(context: Context) {
             microphone = enumOr(prefs.getString("microphone", null), d.microphone),
             notifications = enumOr(prefs.getString("notifications", null), d.notifications),
             tabCleanup = enumOr(prefs.getString("tabCleanup", null), d.tabCleanup),
-            selectRecentOnClose = prefs.getBoolean("selectRecentOnClose", d.selectRecentOnClose),
             haptics = prefs.getBoolean("haptics", d.haptics),
-            checkUpdates = prefs.getBoolean("checkUpdates", d.checkUpdates),
-            glance = prefs.getBoolean("glance", d.glance),
             expandedFolders = prefs.getStringSet("expandedFolders", emptySet()).orEmpty().toSet(),
             collapsedSpaces = prefs.getStringSet("collapsedSpaces", emptySet()).orEmpty().toSet(),
         )

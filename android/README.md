@@ -28,6 +28,8 @@ The app reuses desktop code or ports it closely:
 
 - Launch reopens the temporary tab used last (else the first one) and quietly
   reloads the two before it; with no temporary tab, the home search opens.
+  The same happens when you come back after leaving the app from the search
+  that back shows.
   A picture of the page taken when the app went to the background shows at
   once while the page reloads underneath, so reopening looks instant.
 - Home: the bottom bar morphs into the search, docked
@@ -73,7 +75,7 @@ The app reuses desktop code or ports it closely:
 - "Open in <app>" in the ⋯ menu when an installed app (YouTube, Maps…)
   claims the page's address.
 - First launch: a welcome screen to sign in, make Zen the default browser and
-  set up Obtainium; each step is optional and stays in Settings.
+  set up Obtainium; each step is optional.
 - Cookie banners are refused for you (Settings → Privacy, on by default):
   through the consent platform's own API when it is a known one (OneTrust,
   Didomi, Cookiebot, Usercentrics, Axeptio, Osano…), else by clicking the
@@ -90,12 +92,16 @@ The app reuses desktop code or ports it closely:
   are saved on the phone (never for private tabs), so a tab reloaded after
   being dropped from memory, or after Android stopped the app, returns to the
   same spot with its back button intact.
-- Updates: new versions are GitHub releases tagged `android-vX.Y.Z`. Settings →
-  Updates adds Zen to [Obtainium](https://github.com/ImranR98/Obtainium) (or
-  copies the repository URL for it). The app also asks GitHub twice a day and
-  puts a yellow dot on the ⋯ button and its Settings entry when a newer
-  version is out (Settings → Updates to turn it off). Hold the app icon for an
-  "Updates" shortcut that opens Obtainium.
+- Updates: new versions are GitHub releases tagged `android-vX.Y.Z`. The app
+  asks GitHub twice a day; when a newer version is out, the ⋯ button gets an
+  orange dot and its menu an "Update" entry that opens
+  [Obtainium](https://github.com/ImranR98/Obtainium) (or the release page).
+  Settings → Updates adds Zen to Obtainium. Hold the app icon for an "Updates"
+  shortcut that opens Obtainium.
+- "Set as default browser" sits in the ⋯ menu until Zen is the default.
+- Search with Google or DuckDuckGo. Tracking protection is one choice
+  (Standard or Strict); both also strip tracking parameters from links and
+  send Global Privacy Control.
 - Every menu works like iOS: hold, slide onto an entry, release. A plain tap
   also works. Each entry the finger reaches ticks the vibration motor
   (Settings → Haptic feedback, on by default).

@@ -18,6 +18,13 @@ object EmptySelection {
     fun atLaunch(recent: List<String>, temporary: List<String>): String? =
         recent.firstOrNull { it in temporary } ?: temporary.firstOrNull()
 
+    /**
+     * Back on a page with no history shows the search, and a second back leaves the app with that search still
+     * open. Coming back must not land on that search when a temporary tab can be shown instead.
+     */
+    fun onReturn(searchFromBack: Boolean, privateMode: Boolean, recent: List<String>, temporary: List<String>): String? =
+        if (searchFromBack && !privateMode) atLaunch(recent, temporary) else null
+
     /** Entering private mode with nothing open goes straight to the search; otherwise the private sidebar lets the user pick. */
     fun privateEntryShowsSearch(privateTabs: List<String>): Boolean = privateTabs.isEmpty()
 }

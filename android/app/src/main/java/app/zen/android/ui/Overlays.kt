@@ -223,7 +223,7 @@ private fun BoxScope.ContextMenuSheet(vm: BrowserViewModel, select: SlideSelect)
                 )
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                 if (link != null) {
-                    if (vm.settings.state.value.glance) MenuRow(select, "open", "Glance") { act { vm.openGlance(link) } }
+                    MenuRow(select, "open", "Glance") { act { vm.openGlance(link) } }
                     if (!vm.privateMode) MenuRow(select, "plus", "Open in new tab") { act { vm.newTab(link) } }
                     MenuRow(select, "privateBrowsing", "Open in private tab") { act { vm.newPrivateTab(link) } }
                     MenuRow(select, "link", "Copy link") {

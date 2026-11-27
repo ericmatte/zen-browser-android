@@ -252,7 +252,9 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
     init {
         applyThemeMode(settings.state.value.themeMode)
         viewModelScope.launch { settings.state.collect { Gecko.apply(getApplication(), it) } }
-        viewModelScope.launch {
+        // Posted rather than started in place: a load that finishes before withContext checks back never suspends,
+        // and the launch choice would then touch state declared further down, before the constructor set it.
+        viewModelScope.launch(Dispatchers.Main) {
             repository.load()
             migrateTemporaryTabs()
             refreshEmail()
@@ -341,7 +343,6 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
 
     /** At most twice a day unless [force]d; one anonymous request to GitHub's public API. */
     fun checkForUpdates(force: Boolean = false) {
-        if (!force && !settings.state.value.checkUpdates) return
         val last = settings.string("updateChecked")?.toLongOrNull() ?: 0L
         if (!force && System.currentTimeMillis() - last < Updates.CHECK_EVERY_MILLIS) return
         if (checkingUpdates) return
@@ -471,6 +472,16 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
             emptyList()
         }
         return DismissedSuggestions.without(searches + pages, dismissed) { it.dismissKey }
+    }
+
+    fun onAppReturned() {
+        if (!ready || !launcherOpen) return
+        val id = EmptySelection.onReturn(launcherFromBack, privateMode, recentIds.toList(), localTabs.value.map { it.id }) ?: return
+        val tab = localTabs.value.firstOrNull { it.id == id } ?: return
+        clearSuggestions()
+        launcherOpen = false
+        launcherFromBack = false
+        selectTab(tab)
     }
 
     fun closeLauncher() {
@@ -658,7 +669,7 @@ class BrowserViewModel(app: Application) : AndroidViewModel(app), TabEvents {
         viewModelScope.launch {
             synced.forEach { repository.edit(LocalEdit.CloseTab(it)) }
             if (activeTab in ids && !isPrivateTab(activeTab)) {
-                val recent = if (settings.state.value.selectRecentOnClose) recentTabs(1).firstOrNull() else null
+                val recent = recentTabs(1).firstOrNull()
                 val next = recent ?: space(activeSpace)?.tabs?.firstOrNull()
                 if (next != null) selectTab(next) else selectTab(SCRATCH_TAB, home)
             }

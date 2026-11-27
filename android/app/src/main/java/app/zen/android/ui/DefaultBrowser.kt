@@ -16,7 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 
-/** Whether Zen is the default browser, and the system prompt that makes it so. Shared by Settings and the welcome screen. */
+/** Whether Zen is the default browser, and the system prompt that makes it so. Shared by the ⋯ menu and the welcome screen. */
 class DefaultBrowser internal constructor(private val context: Context, private val roles: RoleManager?) {
     var isDefault by mutableStateOf(roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true)
         internal set
@@ -32,8 +32,13 @@ class DefaultBrowser internal constructor(private val context: Context, private 
         }
     }
 
-    internal fun onResult() {
+    /** The user can change the default browser in Android's settings while Zen keeps running. */
+    fun refresh() {
         isDefault = roles?.isRoleHeld(RoleManager.ROLE_BROWSER) == true
+    }
+
+    internal fun onResult() {
+        refresh()
         // The role prompt closes at once when Android will not show it again; the system list is the way left.
         if (!isDefault && System.currentTimeMillis() - askedAt < 400) openSystemSettings()
     }

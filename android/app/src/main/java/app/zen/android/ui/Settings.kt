@@ -4,12 +4,8 @@ import android.content.ActivityNotFoundException
 import android.net.Uri
 import android.content.Context
 import app.zen.android.browser.Updates
-import android.app.role.RoleManager
 import android.content.Intent
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.border
@@ -111,10 +107,7 @@ private fun SettingsContent(vm: BrowserViewModel) {
                 }
 
                 Section("General") {
-                    DefaultBrowserRow()
                     ChoiceRow("Close temporary tabs", "Unpinned tabs opened on this phone, once unused", TabCleanup.entries, prefs.tabCleanup, { it.label }) { v -> set { it.copy(tabCleanup = v) } }
-                    SwitchRow("Select the last used tab when closing one", null, prefs.selectRecentOnClose) { v -> set { it.copy(selectRecentOnClose = v) } }
-                    SwitchRow("Glance", "Preview links from the long-press menu", prefs.glance) { v -> set { it.copy(glance = v) } }
                     SwitchRow("Haptic feedback", "Vibrate on long presses and while sliding across menu entries", prefs.haptics) { v -> set { it.copy(haptics = v) } }
                 }
 
@@ -157,7 +150,6 @@ private fun SettingsContent(vm: BrowserViewModel) {
                         set { it.copy(tintStatusBar = on) }
                         if (!on) vm.pageTopColor = null else vm.requestCapture()
                     }
-                    SwitchRow("Sidebar on the right", "Private tabs open from the other side", prefs.sidebarRight) { v -> set { it.copy(sidebarRight = v) } }
                     SliderRow("Text size", prefs.textScale) { v -> set { it.copy(textScale = v) } }
                     SwitchRow("Always allow zoom", "Pinch to zoom even when a site blocks it", prefs.forceZoom) { v -> set { it.copy(forceZoom = v) } }
                 }
@@ -166,8 +158,6 @@ private fun SettingsContent(vm: BrowserViewModel) {
                     ChoiceRow("Enhanced Tracking Protection", prefs.tracking.detail, TrackingProtection.entries, prefs.tracking, { it.label }) { v -> set { it.copy(tracking = v) } }
                     SwitchRow("Refuse cookie banners", "Says no for you when a site allows it; otherwise the banner stays for you to answer", prefs.rejectCookieBanners) { v -> set { it.copy(rejectCookieBanners = v) } }
                     SwitchRow("Block ads", "uBlock Origin, downloaded from Mozilla's add-on site and kept up to date", prefs.adBlocking) { v -> set { it.copy(adBlocking = v) } }
-                    SwitchRow("Tell websites not to sell or share my data", "Global Privacy Control", prefs.globalPrivacyControl) { v -> set { it.copy(globalPrivacyControl = v) } }
-                    SwitchRow("Remove tracking parameters from links", null, prefs.stripTrackingParams) { v -> set { it.copy(stripTrackingParams = v) } }
                     ChoiceRow("HTTPS-Only Mode", null, HttpsOnly.entries, prefs.httpsOnly, { it.label }) { v -> set { it.copy(httpsOnly = v) } }
                     ChoiceRow("DNS over HTTPS", prefs.dns.detail, DnsOverHttps.entries, prefs.dns, { it.label }) { v -> set { it.copy(dns = v) } }
                     SwitchRow("Remember browsing history", null, prefs.rememberHistory) { v -> set { it.copy(rememberHistory = v) } }
@@ -187,32 +177,19 @@ private fun SettingsContent(vm: BrowserViewModel) {
                 Section("Updates") {
                     val context = LocalContext.current
                     val update = vm.update
+                    val obtainium = Updates.obtainiumInstalled(context)
                     if (update != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            UpdateDot()
-                            Spacer(Modifier.width(10.dp))
-                            SettingRow("Zen ${update.version} is available", "You have ${BuildConfig.VERSION_NAME}")
-                        }
-                        ActionRow(if (Updates.obtainiumInstalled(context)) "Update with Obtainium" else "Open the release page") {
-                            if (!Updates.openObtainium(context)) {
-                                vm.showSettings = false
-                                vm.newTab(update.pageUrl)
-                            }
-                        }
+                        LinkRow("Zen ${update.version} is available", if (obtainium) "Update with Obtainium" else "Download it from GitHub", UpdateOrange) { installUpdate(context, vm, update) }
+                    } else {
+                        LinkRow(if (vm.checkingUpdates) "Checking…" else "Check for updates", "You have ${BuildConfig.VERSION_NAME}. Zen also checks twice a day.") { vm.checkForUpdates(force = true) }
                     }
-                    ActionRow(if (vm.checkingUpdates) "Checking…" else "Check for updates now") { vm.checkForUpdates(force = true) }
-                    SwitchRow("Check for updates automatically", "Asks GitHub twice a day and puts a yellow dot on the ⋯ button when a new version is out", prefs.checkUpdates) { v -> set { it.copy(checkUpdates = v) } }
-                    SettingRow("Install updates with Obtainium", "Zen is not on the Play Store. Obtainium watches its GitHub releases and installs each new version, including GeckoView security fixes.")
-                    ActionRow("Add Zen to Obtainium") {
-                        if (!openLink(context, Updates.OBTAINIUM_ADD)) {
-                            vm.message = "Install Obtainium first, then come back here"
+                    if (!obtainium) {
+                        LinkRow("Get Obtainium", "Zen is not on the Play Store. Obtainium installs each new version for you.") {
                             vm.showSettings = false
                             vm.newTab(Updates.OBTAINIUM_DOWNLOAD)
                         }
-                    }
-                    CopyRow("Repository URL for Obtainium", Updates.REPO_URL) {
-                        copyToClipboard(context, Updates.REPO_URL)
-                        vm.message = "Repository URL copied"
+                    } else {
+                        LinkRow("Add Zen to Obtainium", "Do it once, then Obtainium installs each new version for you") { openLink(context, Updates.OBTAINIUM_ADD) }
                     }
                 }
 
@@ -270,21 +247,6 @@ private fun settingsBackground(): Color = if (MaterialTheme.colorScheme.backgrou
 @Composable
 private fun settingsPanel(): Color = if (MaterialTheme.colorScheme.background.isLight()) Color.White else Color(0xFF232329)
 
-/**
- * Asks Android for the browser role. When the user already declined twice the
- * system answers instantly without a dialog, so we fall back to the default
- * apps screen.
- */
-@Composable
-private fun DefaultBrowserRow() {
-    val browser = rememberDefaultBrowser()
-    if (browser.isDefault) {
-        SettingRow("Default browser", "Zen opens the links you tap in other apps")
-    } else {
-        ActionRow("Set Zen as default browser", onClick = browser::ask)
-    }
-}
-
 @Composable
 private fun SettingRow(title: String, subtitle: String?) {
     Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
@@ -293,22 +255,23 @@ private fun SettingRow(title: String, subtitle: String?) {
     }
 }
 
-@Composable
-private fun CopyRow(title: String, value: String, onCopy: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onCopy).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Icon(zenIcon("edit-copy"), "Copy", Modifier.padding(horizontal = 8.dp).size(18.dp))
-    }
-}
-
 private fun openLink(context: Context, link: String): Boolean = try {
     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     true
 } catch (_: ActivityNotFoundException) {
     false
+}
+
+@Composable
+private fun LinkRow(title: String, subtitle: String, subtitleColor: Color = Color.Unspecified, onClick: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 10.dp)) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (subtitleColor == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else subtitleColor,
+        )
+    }
 }
 
 @Composable
