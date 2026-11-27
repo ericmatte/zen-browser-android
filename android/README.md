@@ -51,6 +51,13 @@ The app reuses desktop code or ports it closely:
   for its menu; slide onto an entry and release, or move away to drag it
   (reorder, pin, or drop into Essentials). While dragging, the rows open a
   gap where the item will land.
+- Tap the address bar's favicon for the site's panel: connection, the
+  permissions it was given (switch or reset them) and "Clear cookies and site
+  data". A site asking for location, notifications… asks in that same panel,
+  above the bar, without blocking the page; the answer is remembered.
+- A pinned tab keeps the address it was pinned with, like desktop: browsing
+  inside it is never synced. Its sidebar row then shows the pinned icon, a
+  slash, and the page shown now; tap left of the slash to go back.
 - Essentials are local to the phone (never synced) and hold up to 12 tabs.
 - Only pinned tabs, folders and spaces sync. Temporary (unpinned) tabs stay
   where they were opened: desktop's never show on the phone, and the phone's

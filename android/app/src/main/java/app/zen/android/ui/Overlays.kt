@@ -89,7 +89,7 @@ fun BoxScope.Overlays(vm: BrowserViewModel, dark: Boolean, linkMenu: SlideSelect
         SettingsScreen(vm, dark)
     }
 
-    vm.requests.current?.let { PageDialog(it, onDone = vm.requests::resolved) }
+    vm.requests.current?.takeIf { it !is PageRequest.Permission }?.let { PageDialog(it, onDone = vm.requests::resolved) }
 
     val message = vm.message
     AnimatedVisibility(
@@ -285,29 +285,7 @@ private fun PageDialog(request: PageRequest, onDone: () -> Unit) {
             confirmButton = { TextButton(onClick = { finish { request.answer(true) } }) { Text("OK") } },
             dismissButton = { TextButton(onClick = { finish { request.answer(false) } }) { Text("Cancel") } },
         )
-        is PageRequest.Permission -> {
-            var remember by remember(request) { mutableStateOf(true) }
-            AlertDialog(
-                onDismissRequest = { finish(request::cancel) },
-                title = { Text(request.title) },
-                text = {
-                    Column {
-                        Text(request.message)
-                        if (request.canRemember) {
-                            Row(
-                                Modifier.padding(top = 12.dp).clip(RoundedCornerShape(8.dp)).clickable { remember = !remember },
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Checkbox(remember, { remember = it })
-                                Text("Remember this decision")
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { finish { request.answer(true, remember) } }) { Text("Allow") } },
-                dismissButton = { TextButton(onClick = { finish { request.answer(false, remember) } }) { Text("Block") } },
-            )
-        }
+        is PageRequest.Permission -> Unit
         is PageRequest.TextInput -> {
             var text by remember(request) { mutableStateOf(request.initial) }
             AlertDialog(

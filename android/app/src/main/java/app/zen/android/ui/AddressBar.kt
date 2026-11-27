@@ -1,5 +1,11 @@
 package app.zen.android.ui
 
+import app.zen.android.browser.PageRequest
+
+import androidx.compose.material3.OutlinedButton
+
+import androidx.compose.material3.Button
+
 import androidx.compose.material3.Switch
 
 import android.net.Uri
@@ -606,12 +612,13 @@ fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
         vm.siteInfoOpen = false
     }
     LaunchedEffect(vm.url) { close() }
+    val ask = vm.requests.current as? PageRequest.Permission
     if (vm.siteInfoOpen) {
         androidx.activity.compose.BackHandler { close() }
         Box(Modifier.fillMaxSize().clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { close() })
     }
     AnimatedVisibility(
-        vm.siteInfoOpen,
+        vm.siteInfoOpen || ask != null,
         modifier = modifier,
         enter = scaleIn(spring(dampingRatio = 0.8f, stiffness = 1000f), initialScale = 0.7f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeIn(tween(80)),
         exit = scaleOut(tween(90), targetScale = 0.85f, transformOrigin = TransformOrigin(0.15f, 1f)) + fadeOut(tween(90)),
@@ -625,6 +632,11 @@ fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
             shadowElevation = 14.dp,
         ) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(vertical = 8.dp)) {
+                if (ask != null) {
+                    PermissionAsk(ask) { vm.requests.resolved() }
+                    if (!vm.siteInfoOpen) return@Column
+                    HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                }
                 Row(Modifier.padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     SiteIdentity(vm.url, vm.secure)
                     Column(Modifier.padding(start = 14.dp)) {
@@ -672,6 +684,25 @@ fun SitePopover(vm: BrowserViewModel, modifier: Modifier) {
                 }
                 Action("Clear cookies and site data", "trash", tint = MaterialTheme.colorScheme.error) { vm.clearSiteData() }
             }
+        }
+    }
+}
+
+/**
+ * A site's request rides in the favicon's popover instead of a modal: the page stays usable,
+ * and the answer is remembered so the site stops asking (changed later from the same popover).
+ */
+@Composable
+private fun PermissionAsk(request: PageRequest.Permission, onDone: () -> Unit) {
+    fun answer(allow: Boolean) {
+        request.answer(allow, request.canRemember)
+        onDone()
+    }
+    Column(Modifier.padding(horizontal = 18.dp, vertical = 6.dp)) {
+        Text(request.message, style = MaterialTheme.typography.bodyLarge)
+        Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton({ answer(false) }, Modifier.weight(1f)) { Text("Block") }
+            Button({ answer(true) }, Modifier.weight(1f)) { Text("Allow") }
         }
     }
 }
