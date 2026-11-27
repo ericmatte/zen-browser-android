@@ -9,6 +9,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import app.zen.android.browser.DragGap
+import app.zen.android.browser.SpaceHighlight
 import kotlinx.coroutines.delay
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.Spring
@@ -81,11 +82,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -121,6 +125,7 @@ import app.zen.android.sync.SyncStatus
 import app.zen.android.sync.TabItem
 import app.zen.android.sync.flattenTabs
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -234,7 +239,7 @@ fun SpacesSidebar(
 
                     SidebarFooter(
                         spaces = spaces,
-                        current = pager.currentPage,
+                        position = position,
                         status = status,
                         onPick = { scope.launch { pager.animateScrollToPage(it) } },
                         onLibrary = { vm.showLibrary = true },
@@ -1065,7 +1070,7 @@ private fun HeldPreview(held: Held) {
 @Composable
 private fun SidebarFooter(
     spaces: List<Space>,
-    current: Int,
+    position: Float,
     status: SyncStatus,
     onPick: (Int) -> Unit,
     onLibrary: () -> Unit,
@@ -1077,12 +1082,24 @@ private fun SidebarFooter(
     val tint = MaterialTheme.colorScheme.onSurface
     Row(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLibrary) { Icon(zenIcon("library"), "Library", Modifier.size(20.dp), tint = tint) }
+        val dots = rememberLazyListState()
+        val highlight = toolbarElementBackground()
         LazyRow(
-            Modifier.weight(1f),
+            Modifier.weight(1f).drawBehind {
+                // One highlight slides between the icons with the pager, so it moves with the colours and pages.
+                val items = dots.layoutInfo.visibleItemsInfo
+                val x = SpaceHighlight.x(position) { i -> items.firstOrNull { it.index == i }?.offset } ?: return@drawBehind
+                val side = items.first().size.toFloat()
+                drawRoundRect(highlight, Offset(x, (size.height - side) / 2), Size(side, side), CornerRadius(SpaceDotCorner.toPx()))
+            },
+            state = dots,
             horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(spaces.size) { i -> SpaceDot(spaces[i], i == current, Modifier.holdMenu(spaceMenu) { menuFor(i) }) { onPick(i) } }
+            items(spaces.size) { i ->
+                val selection = (1f - abs(position - i)).coerceIn(0f, 1f)
+                SpaceDot(spaces[i], selection, Modifier.holdMenu(spaceMenu) { menuFor(i) }) { onPick(i) }
+            }
         }
         // Sync runs on its own, like desktop; only a failure shows up here.
         if (status is SyncStatus.Failed) {
@@ -1092,20 +1109,22 @@ private fun SidebarFooter(
     }
 }
 
+private val SpaceDotCorner = 10.dp
+
+/** [selection] goes from 0 to 1 as the pager reaches this space, so the icon brightens with the swipe. */
 @Composable
-private fun SpaceDot(space: Space, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun SpaceDot(space: Space, selection: Float, modifier: Modifier, onClick: () -> Unit) {
     val onSurface = MaterialTheme.colorScheme.onSurface
-    val tint = if (selected) onSurface else onSurface.copy(alpha = onSurface.alpha * 0.5f)
+    val tint = onSurface.copy(alpha = onSurface.alpha * (0.5f + 0.5f * selection))
     Box(
         modifier
             .size(34.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(if (selected) toolbarElementBackground() else Color.Transparent)
+            .clip(RoundedCornerShape(SpaceDotCorner))
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         ZenIconView(space.icon, 16.dp, tint) {
-            Box(Modifier.size(if (selected) 8.dp else 6.dp).clip(RoundedCornerShape(50)).background(tint))
+            Box(Modifier.size(6.dp + 2.dp * selection).clip(RoundedCornerShape(50)).background(tint))
         }
     }
 }
