@@ -206,16 +206,19 @@ fun BottomChrome(
             }
         }
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().imePadding(),
+            Modifier.align(Alignment.BottomCenter).fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding(),
+            verticalArrangement = Arrangement.Bottom,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            // The panel takes all the room above the bar, so the list never jumps in height as suggestions change.
             AnimatedVisibility(
                 typing && vm.suggestions.isNotEmpty(),
+                Modifier.weight(1f, fill = false),
                 enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
                 exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom),
             ) {
                 // Same width as the bar under it, whether that bar floats or is docked.
-                SuggestionsPanel(vm, inNewTab = searching, Modifier.fillMaxWidth(1f - 2 * BarSideInset * (1f - (if (landscape) 1f else dock)))) { onEditingChange(false) }
+                SuggestionsPanel(vm, inNewTab = searching, Modifier.fillMaxWidth(1f - 2 * BarSideInset * (1f - (if (landscape) 1f else dock))).fillMaxHeight()) { onEditingChange(false) }
             }
             AnimatedVisibility(
                 visible = active || (!landscape && vm.chromeVisible && !webKeyboard),
@@ -806,10 +809,6 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                         Text(label, Modifier.padding(start = 16.dp), color = tint, style = MaterialTheme.typography.bodyLarge)
                     }
                 }
-                vm.update?.let { update ->
-                    Item("Update to ${update.version}", "downloads", tint = UpdateOrange) { installUpdate(context, vm, update) }
-                }
-                if (!defaultBrowser.isDefault) Item("Set as default browser", "open") { defaultBrowser.ask() }
                 nativeApp?.let { app ->
                     Item("Open in ${app.label}", "", leading = { AppIcon(app) }) {
                         if (!AppLinks.open(context, vm.url, app)) vm.message = "${app.label} could not open this page"
@@ -823,6 +822,11 @@ fun BarMenu(vm: BrowserViewModel, menu: BarMenuState, landscape: Boolean, modifi
                 }
                 Item(if (vm.isDesktopMode()) "Mobile site" else "Desktop site", "screen") { vm.toggleDesktopMode() }
                 Item("Settings", "settings") { vm.showSettings = true }
+                // Last, so they sit right above the thumb that opened the menu.
+                if (!defaultBrowser.isDefault) Item("Set as default browser", "open") { defaultBrowser.ask() }
+                vm.update?.let { update ->
+                    Item("Update to ${update.version}", "downloads", tint = UpdateOrange) { installUpdate(context, vm, update) }
+                }
             }
         }
     }
@@ -841,7 +845,10 @@ private fun SuggestionsPanel(vm: BrowserViewModel, inNewTab: Boolean, modifier: 
     ) {
         // Best match sits at the bottom, right above the bar and the thumb.
         val reveal = remember { RevealGroup() }
-        Column(Modifier.closesReveal(reveal).padding(top = 6.dp, bottom = 6.dp + SuggestionsOverlap)) {
+        Column(
+            Modifier.closesReveal(reveal).verticalScroll(rememberScrollState(), reverseScrolling = true).padding(top = 6.dp, bottom = 6.dp + SuggestionsOverlap),
+            verticalArrangement = Arrangement.Bottom,
+        ) {
             vm.suggestions.asReversed().forEach { suggestion ->
                 key(suggestion.dismissKey) {
                     SwipeRow(

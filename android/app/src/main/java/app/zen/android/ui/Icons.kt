@@ -21,6 +21,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathFillType
@@ -130,6 +134,17 @@ object Favicons {
 
     fun cached(key: String): ImageBitmap? = memory.get(key)
 
+    private val tones = java.util.WeakHashMap<ImageBitmap, Float>()
+
+    /** Measured once per bitmap; favicons are small (at most 64 px), so this stays cheap. */
+    @Synchronized
+    fun luminance(image: ImageBitmap): Float? = tones[image] ?: run {
+        val bitmap = image.asAndroidBitmap().let { if (it.config == android.graphics.Bitmap.Config.HARDWARE) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        app.zen.android.browser.FaviconTone.luminance(pixels)?.also { tones[image] = it }
+    }
+
     suspend fun load(context: Context, pageUrl: String, dataIcon: String?): ImageBitmap? = withContext(Dispatchers.IO) {
         dataIcon?.let { decodeDataUrl(it) }?.let { return@withContext it }
         val host = host(pageUrl) ?: return@withContext null
@@ -163,6 +178,16 @@ object Favicons {
     private fun sha1(text: String) = MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 }
 
+/** A thin halo traced from the icon's own shape, so a black logo on a dark sidebar (or a white one on a light one) stays visible. */
+private fun Modifier.contrastOutline(image: ImageBitmap, color: Color): Modifier = drawBehind {
+    val step = 1.dp.toPx()
+    val tint = ColorFilter.tint(color)
+    val box = IntSize(size.width.toInt(), size.height.toInt())
+    for ((dx, dy) in listOf(-step to 0f, step to 0f, 0f to -step, 0f to step)) {
+        drawImage(image, dstOffset = IntOffset(dx.toInt(), dy.toInt()), dstSize = box, colorFilter = tint)
+    }
+}
+
 @Composable
 fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modifier, loading: Boolean = false, spinning: Boolean = false) {
     val context = LocalContext.current
@@ -171,8 +196,17 @@ fun Favicon(url: String, dataIcon: String?, size: Dp, modifier: Modifier = Modif
     // Tried again once the page settles: many sites only serve their icon after the page itself.
     LaunchedEffect(key, dataIcon, loading) { if (bitmap == null) bitmap = Favicons.load(context, url, dataIcon) }
     val current = bitmap
+    val darkSurface = MaterialTheme.colorScheme.onSurface.isLight()
+    val blendsIn = current?.let { Favicons.luminance(it) }?.let { app.zen.android.browser.FaviconTone.blendsIn(it, darkSurface) } == true
     if (current != null && !spinning) {
-        Image(current, null, modifier.size(size).clip(RoundedCornerShape(size / 5)))
+        Image(
+            current,
+            null,
+            modifier
+                .size(size)
+                .then(if (blendsIn) Modifier.contrastOutline(current, if (darkSurface) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.35f)) else Modifier)
+                .clip(RoundedCornerShape(size / 5)),
+        )
     } else if (loading || spinning) {
         Box(modifier.size(size), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(Modifier.size(size * 0.8f), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f), strokeWidth = 2.dp)

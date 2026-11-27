@@ -1,5 +1,15 @@
 package app.zen.android.ui
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -90,9 +100,17 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
     val context = LocalContext.current
     val visitMenu = remember { HoldMenuState() }
     val today = startOfToday()
-    val entries = remember(query, whenFilter, sort, revision) {
-        val since = whenFilter.days?.let { if (it == 0) today else System.currentTimeMillis() - it * 86_400_000L }
-        vm.historyEntries(query, since, sort)
+    // Built off the main thread: a long history sorted and grouped in the first frame stalled the opening slide.
+    val grouped by produceState<Map<String, List<Visit>>?>(null, query, whenFilter, sort, revision) {
+        value = withContext(Dispatchers.Default) {
+            val since = whenFilter.days?.let { if (it == 0) today else System.currentTimeMillis() - it * 86_400_000L }
+            val entries = vm.historyEntries(query, since, sort)
+            when (sort) {
+                HistorySort.DATE -> entries.groupBy { dayLabel(it.lastVisit, today) }
+                HistorySort.SITE -> entries.groupBy { UrlInput.display(it.url) }
+                else -> mapOf("" to entries)
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize().zenSpaceBackground(spec)) {
@@ -112,9 +130,20 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
                             )
                         }
                     }
-                    if (vm.libraryTab == LibraryTab.DOWNLOADS) {
-                        DownloadsSection(vm, visitMenu, Modifier.weight(1f))
+                    AnimatedContent(
+                        vm.libraryTab,
+                        Modifier.weight(1f),
+                        transitionSpec = {
+                            val toRight = if (targetState.ordinal > initialState.ordinal) 1 else -1
+                            (slideInHorizontally(tween(240)) { toRight * it / 6 } + fadeIn(tween(240))) togetherWith
+                                (slideOutHorizontally(tween(240)) { -toRight * it / 6 } + fadeOut(tween(160)))
+                        },
+                        label = "libraryTab",
+                    ) { tab ->
+                    if (tab == LibraryTab.DOWNLOADS) {
+                        DownloadsSection(vm, visitMenu, Modifier.fillMaxSize())
                     } else {
+                    Column(Modifier.fillMaxSize()) {
                     Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Row(
                             Modifier.weight(1f).height(46.dp).clip(RoundedCornerShape(12.dp)).background(toolbarElementBackground()).padding(horizontal = 14.dp),
@@ -146,16 +175,11 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
                             revision++
                         }
                     }
-                    if (entries.isEmpty()) {
+                    if (grouped?.values?.all { it.isEmpty() } == true) {
                         Text("No history found", Modifier.padding(24.dp), color = text.copy(alpha = 0.6f))
                     }
                     LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
-                        val grouped: Map<String, List<Visit>> = when (sort) {
-                            HistorySort.DATE -> entries.groupBy { dayLabel(it.lastVisit, today) }
-                            HistorySort.SITE -> entries.groupBy { UrlInput.display(it.url) }
-                            else -> mapOf("" to entries)
-                        }
-                        grouped.forEach { (header, visits) ->
+                        grouped.orEmpty().forEach { (header, visits) ->
                             if (header.isNotEmpty()) {
                                 item(key = "h:$header") {
                                     Text(
@@ -192,6 +216,8 @@ fun LibraryScreen(vm: BrowserViewModel, dark: Boolean, onOpened: () -> Unit) {
                                 )
                             }
                         }
+                    }
+                    }
                     }
                     }
                 }

@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -167,7 +169,9 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
     }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(statusColor)) {
-        val drawerWidth = androidx.compose.ui.unit.lerp(min(maxWidth * 0.86f, 380.dp), maxWidth, library)
+        val sidebarWidth = min(maxWidth * 0.86f, 380.dp)
+        val screenWidth = maxWidth
+        val drawerWidth = androidx.compose.ui.unit.lerp(sidebarWidth, maxWidth, library)
         val density = LocalDensity.current
         val widthPx = with(density) { drawerWidth.toPx() }
         val screenPx = with(density) { maxWidth.toPx() }
@@ -307,8 +311,10 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     val spec = remember(theme, dark) { ZenGradient.spec(theme, dark) }
                     Box(Modifier.fillMaxSize().then(if (vm.privateMode) Modifier.background(PrivateBackdrop) else Modifier.zenSpaceBackground(spec)))
                 }
+                // Both panes keep their final width while the drawer grows, so the animation only moves pixels
+                // instead of measuring the sidebar and the history list again on every frame.
                 Box(
-                    Modifier.fillMaxSize().graphicsLayer {
+                    Modifier.fillMaxHeight().width(sidebarWidth).graphicsLayer {
                         val scale = 1f - 0.08f * library
                         scaleX = scale
                         scaleY = scale
@@ -339,7 +345,13 @@ fun BrowserScreen(vm: BrowserViewModel, dark: Boolean) {
                     }
                 }
                 if (library > 0f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { translationX = -(1f - library) * size.width }) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .wrapContentWidth(Alignment.Start, unbounded = true)
+                            .requiredWidth(screenWidth)
+                            .graphicsLayer { translationX = -(1f - library) * size.width },
+                    ) {
                         LibraryScreen(vm, dark, onOpened = { drawer.close() })
                     }
                 }
